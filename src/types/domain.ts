@@ -3,6 +3,8 @@ export type Plan = {
   name: string;
   description: string;
   isActive: boolean;
+  startDate: string;           // "YYYY-MM-DD"
+  durationDays: number | null; // null = tratamento em aberto
 };
 
 export type Medication = {
@@ -89,4 +91,16 @@ export type MoodLog = {
   feeling: Feeling;
   text?: string;
   planId?: string;
+};
+
+export type AlarmSettings = {
+  enabled: boolean;
+  snoozeMinutes: number;
+  retryCount: number;
+};
+
+export const DEFAULT_ALARM_SETTINGS: AlarmSettings = {
+  enabled: true,
+  retryCount: 6,
+  snoozeMinutes: 10,
 };

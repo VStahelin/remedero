@@ -46,7 +46,10 @@ export function CheckInScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.glowOrb} />
       <View>
         <Text style={styles.eyebrow}>Check-in</Text>
@@ -67,7 +70,11 @@ export function CheckInScreen({
 
       <View style={styles.photoBox}>
         {photoUri ? (
-          <Image resizeMode="cover" source={{ uri: photoUri }} style={styles.photoPreview} />
+          <Image
+            resizeMode="cover"
+            source={{ uri: photoUri }}
+            style={styles.photoPreview}
+          />
         ) : (
           <>
             <Text style={styles.photoTitle}>Foto obrigatoria</Text>
@@ -111,7 +118,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
@@ -158,7 +165,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 220,

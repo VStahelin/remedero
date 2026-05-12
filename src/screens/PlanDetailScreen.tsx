@@ -24,6 +24,11 @@ export type PlanStats = {
   completionRate: number;
   medicationCount: number;
   scheduleCount: number;
+  progressPercent: number | null;
+  daysElapsed: number;
+  totalDays: number | null;
+  endDate: string | null;
+  startDate: string;
 };
 
 export type AddPlanNoteInput = {
@@ -74,6 +79,11 @@ const feelingOptions: Array<{ label: string; value: Feeling }> = [
   { label: "Triste", value: "triste" },
   { label: "Animado", value: "animado" },
 ];
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+}
 
 function formatSchedules(schedules: MedicationScheduleEntry[]): string {
   const grouped = schedules.reduce<Record<Weekday, string[]>>(
@@ -145,9 +155,33 @@ export function PlanDetailScreen({
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Estatisticas</Text>
 
+        {/* Progresso do tratamento — só aparece quando há duração definida */}
+        {stats.totalDays != null ? (
+          <View style={styles.treatmentBlock}>
+            <View style={styles.treatmentMeta}>
+              <Text style={styles.treatmentDays}>
+                Dia {Math.min(stats.daysElapsed + 1, stats.totalDays)} de {stats.totalDays}
+              </Text>
+              <Text style={styles.treatmentEnd}>
+                {stats.progressPercent! >= 100
+                  ? "Tratamento concluido"
+                  : `termina ${formatDate(stats.endDate!)}`}
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View
+                style={[styles.progressFillTreatment, { width: `${stats.progressPercent}%` }]}
+              />
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.startDateLabel}>Inicio: {formatDate(stats.startDate)}</Text>
+        )}
+
+        {/* Adesão */}
         <View style={styles.completionHero}>
           <Text style={styles.completionRate}>{stats.completionRate}%</Text>
-          <Text style={styles.completionLabel}>de conclusao</Text>
+          <Text style={styles.completionLabel}>de adesao</Text>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${stats.completionRate}%` }]} />
           </View>
@@ -165,16 +199,11 @@ export function PlanDetailScreen({
             </Text>
             <Text style={styles.statLabel}>perdidos</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.pendingCheckIns}</Text>
-            <Text style={styles.statLabel}>pendentes</Text>
-          </View>
         </View>
 
         <Text style={styles.statsMeta}>
           {stats.medicationCount} {stats.medicationCount === 1 ? "remedio" : "remedios"} ·{" "}
-          {stats.scheduleCount} {stats.scheduleCount === 1 ? "horario" : "horarios"}
+          {stats.scheduleCount} {stats.scheduleCount === 1 ? "horario" : "horarios"} por semana
         </Text>
       </View>
 
@@ -472,13 +501,38 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     height: 4,
   },
+  progressFillTreatment: {
+    backgroundColor: colors.success,
+    borderRadius: radius.full,
+    height: 4,
+  },
   progressTrack: {
     backgroundColor: colors.surfaceBright,
     borderRadius: radius.full,
     height: 4,
-    marginTop: spacing.xs,
     overflow: "hidden",
     width: "100%",
+  },
+  startDateLabel: {
+    color: colors.textSubtle,
+    ...typography.labelMd,
+  },
+  treatmentBlock: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  treatmentDays: {
+    color: colors.text,
+    ...typography.headlineSm,
+  },
+  treatmentEnd: {
+    color: colors.textSubtle,
+    ...typography.labelMd,
+  },
+  treatmentMeta: {
+    gap: spacing.xs,
   },
   section: {
     backgroundColor: colors.surface,

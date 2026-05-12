@@ -11,10 +11,11 @@ type Option = {
 type SelectFieldProps = {
   onChange: (value: string) => void;
   options: Option[];
+  placeholder?: string;
   value: string;
 };
 
-export function SelectField({ onChange, options, value }: SelectFieldProps) {
+export function SelectField({ onChange, options, placeholder, value }: SelectFieldProps) {
   const selected = options.find((o) => o.value === value);
   const [open, setOpen] = useState(false);
 
@@ -25,7 +26,9 @@ export function SelectField({ onChange, options, value }: SelectFieldProps) {
         onPress={() => setOpen(true)}
         style={styles.field}
       >
-        <Text style={styles.fieldText}>{selected?.label ?? value}</Text>
+        <Text style={[styles.fieldText, !selected && styles.fieldPlaceholder]}>
+          {selected?.label ?? placeholder ?? value}
+        </Text>
         <Text style={styles.chevron}>▾</Text>
       </TouchableOpacity>
 
@@ -76,6 +79,9 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  fieldPlaceholder: {
+    color: colors.textSubtle,
   },
   fieldText: {
     color: colors.text,

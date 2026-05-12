@@ -7,6 +7,8 @@ erDiagram
     TEXT name
     TEXT description
     INTEGER is_active
+    TEXT start_date
+    INTEGER duration_days
   }
 
   MEDICATIONS {
@@ -58,7 +60,7 @@ erDiagram
 
 Notas:
 
-- `plans` representa o tratamento.
+- `plans` representa o tratamento. `start_date` é a data de início no formato `YYYY-MM-DD`. `duration_days` é a duração em dias (nulo = tratamento em aberto sem data de término definida).
 - `plan_medications` representa um remedio dentro de um plano, incluindo a quantidade.
 - `plan_medication_schedules` guarda uma linha por combinacao de remedio no plano, dia da semana e horario.
 - Essa estrutura permite agendas diferentes por dia. Exemplo: segunda a sexta `08:00` e `20:00`, sabado apenas `12:00`.

@@ -12,3 +12,7 @@ yarn-error.*
 .cursor
 
 /prints_ui/*
+android/keystore.properties
+android/app/*.keystore
+android/app/*.jks
+.env

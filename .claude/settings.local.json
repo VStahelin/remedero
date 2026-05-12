@@ -4,7 +4,8 @@
       "Bash(npx tsc *)",
       "Bash(npx expo *)",
       "Bash(node *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(xargs grep -l \"ModulesProvider\\\\|ApplicationModuleProvider\\\\|ModuleRegistry\")"
     ]
   }
 }

@@ -1,14 +1,30 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, MedicationDose, MoodLog, Plan, QuickLog } from "@/types/domain";
+import {
+  CheckIn,
+  MedicationDose,
+  MoodLog,
+  Plan,
+  QuickLog,
+} from "@/types/domain";
 
 type HistoryScreenProps = {
   checkIns: CheckIn[];
-  getDosesForCheckIn: (planId: string, scheduledTime: string) => MedicationDose[];
+  getDosesForCheckIn: (
+    planId: string,
+    scheduledTime: string,
+  ) => MedicationDose[];
   moodLogs: MoodLog[];
   onAddMood: () => void;
+  onOpenCheckIn: (checkInId: string) => void;
   onQuickLog: () => void;
   plans: Plan[];
   quickLogs: QuickLog[];
@@ -102,12 +118,23 @@ function extractTime(isoOrTime: string): string {
   return isoOrTime;
 }
 
-export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMood, onQuickLog, plans, quickLogs }: HistoryScreenProps) {
+export function HistoryScreen({
+  checkIns,
+  getDosesForCheckIn,
+  moodLogs,
+  onAddMood,
+  onOpenCheckIn,
+  onQuickLog,
+  plans,
+  quickLogs,
+}: HistoryScreenProps) {
   const today = new Date();
   const todayKey = formatDate(today);
   const todayCheckIns = checkIns.filter((checkIn) => checkIn.date === todayKey);
 
-  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [viewDate, setViewDate] = useState(
+    () => new Date(today.getFullYear(), today.getMonth(), 1),
+  );
   const [selectedDate, setSelectedDate] = useState<string | null>(todayKey);
 
   function toggleSelectedDate(date: string) {
@@ -126,16 +153,29 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
   const monthLabel = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View>
         <Text style={styles.eyebrow}>Historico</Text>
         <Text style={styles.title}>Hoje</Text>
-        <Text style={styles.subtitle}>Tiles de hoje e consistencia do mes.</Text>
+        <Text style={styles.subtitle}>
+          Tiles de hoje e consistencia do mes.
+        </Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.actionChip}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={onQuickLog}
+            style={styles.actionChip}
+          >
             <Text style={styles.actionChipText}>+ Avulso</Text>
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" onPress={onAddMood} style={styles.actionChip}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={onAddMood}
+            style={styles.actionChip}
+          >
             <Text style={styles.actionChipText}>+ Sentimento</Text>
           </TouchableOpacity>
         </View>
@@ -148,11 +188,20 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
         const isMissed = checkIn.status === "missed";
 
         return (
-          <View key={checkIn.id} style={styles.row}>
+          <TouchableOpacity
+            key={checkIn.id}
+            accessibilityRole="button"
+            onPress={() => onOpenCheckIn(checkIn.id)}
+            style={styles.row}
+          >
             <View
               style={[
                 styles.statusDot,
-                isCompleted ? styles.success : isMissed ? styles.danger : styles.pending,
+                isCompleted
+                  ? styles.success
+                  : isMissed
+                    ? styles.danger
+                    : styles.pending,
               ]}
             />
             <View style={styles.rowContent}>
@@ -164,7 +213,8 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
                 {doses.map((dose) => dose.name).join(", ")}
               </Text>
             </View>
-          </View>
+            <Text style={styles.rowChevron}>›</Text>
+          </TouchableOpacity>
         );
       })}
 
@@ -172,11 +222,19 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
         <View style={styles.calendarHeader}>
           <Text style={styles.sectionTitle}>Calendario</Text>
           <View style={styles.monthNav}>
-            <TouchableOpacity accessibilityRole="button" onPress={prevMonth} style={styles.monthNavBtn}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={prevMonth}
+              style={styles.monthNavBtn}
+            >
               <Text style={styles.monthNavText}>‹</Text>
             </TouchableOpacity>
             <Text style={styles.monthLabel}>{monthLabel}</Text>
-            <TouchableOpacity accessibilityRole="button" onPress={nextMonth} style={styles.monthNavBtn}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={nextMonth}
+              style={styles.monthNavBtn}
+            >
               <Text style={styles.monthNavText}>›</Text>
             </TouchableOpacity>
           </View>
@@ -196,7 +254,9 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
               return <View key={`empty-${index}`} style={styles.dayCell} />;
             }
 
-            const date = formatDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), day));
+            const date = formatDate(
+              new Date(viewDate.getFullYear(), viewDate.getMonth(), day),
+            );
             const status = getDayStatus(checkIns, date);
             const isToday = date === todayKey;
 
@@ -242,96 +302,151 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMoo
           })}
         </View>
 
-        {selectedDate && (() => {
-          const dayCheckIns = checkIns.filter((ci) => ci.date === selectedDate);
-          const dayQuickLogs = quickLogs.filter((ql) => ql.takenAt.startsWith(selectedDate));
-          const dayMoodLogs = moodLogs.filter((ml) => ml.createdAt.startsWith(selectedDate));
-          const [y, m, d] = selectedDate.split("-").map(Number);
-          const label = `${d} de ${monthNames[m - 1]} ${y}`;
+        {selectedDate &&
+          (() => {
+            const dayCheckIns = checkIns.filter(
+              (ci) => ci.date === selectedDate,
+            );
+            const dayQuickLogs = quickLogs.filter((ql) =>
+              ql.takenAt.startsWith(selectedDate),
+            );
+            const dayMoodLogs = moodLogs.filter((ml) =>
+              ml.createdAt.startsWith(selectedDate),
+            );
+            const [y, m, d] = selectedDate.split("-").map(Number);
+            const label = `${d} de ${monthNames[m - 1]} ${y}`;
 
-          type TimelineItem =
-            | { kind: "checkin"; time: string; data: CheckIn }
-            | { kind: "quicklog"; time: string; data: QuickLog }
-            | { kind: "mood"; time: string; data: MoodLog };
+            type TimelineItem =
+              | { kind: "checkin"; time: string; data: CheckIn }
+              | { kind: "quicklog"; time: string; data: QuickLog }
+              | { kind: "mood"; time: string; data: MoodLog };
 
-          const timeline: TimelineItem[] = [
-            ...dayCheckIns.map((ci) => ({
-              kind: "checkin" as const,
-              time: ci.completedAt ? extractTime(ci.completedAt) : ci.scheduledTime,
-              data: ci,
-            })),
-            ...dayQuickLogs.map((ql) => ({
-              kind: "quicklog" as const,
-              time: extractTime(ql.takenAt),
-              data: ql,
-            })),
-            ...dayMoodLogs.map((ml) => ({
-              kind: "mood" as const,
-              time: extractTime(ml.createdAt),
-              data: ml,
-            })),
-          ].sort((a, b) => a.time.localeCompare(b.time));
+            const timeline: TimelineItem[] = [
+              ...dayCheckIns.map((ci) => ({
+                kind: "checkin" as const,
+                time: ci.completedAt
+                  ? extractTime(ci.completedAt)
+                  : ci.scheduledTime,
+                data: ci,
+              })),
+              ...dayQuickLogs.map((ql) => ({
+                kind: "quicklog" as const,
+                time: extractTime(ql.takenAt),
+                data: ql,
+              })),
+              ...dayMoodLogs.map((ml) => ({
+                kind: "mood" as const,
+                time: extractTime(ml.createdAt),
+                data: ml,
+              })),
+            ].sort((a, b) => a.time.localeCompare(b.time));
 
-          return (
-            <View style={styles.dayDetail}>
-              <Text style={styles.dayDetailTitle}>{label}</Text>
-              {timeline.length === 0 ? (
-                <Text style={styles.dayDetailEmpty}>Nenhum registro neste dia.</Text>
-              ) : (
-                timeline.map((item) => {
-                  if (item.kind === "checkin") {
-                    const ci = item.data;
-                    const plan = plans.find((p) => p.id === ci.planId);
-                    const doses = getDosesForCheckIn(ci.planId, ci.scheduledTime);
-                    const isCompleted = ci.status === "completed";
-                    const isMissed = ci.status === "missed";
+            return (
+              <View style={styles.dayDetail}>
+                <Text style={styles.dayDetailTitle}>{label}</Text>
+                {timeline.length === 0 ? (
+                  <Text style={styles.dayDetailEmpty}>
+                    Nenhum registro neste dia.
+                  </Text>
+                ) : (
+                  timeline.map((item) => {
+                    if (item.kind === "checkin") {
+                      const ci = item.data;
+                      const plan = plans.find((p) => p.id === ci.planId);
+                      const doses = getDosesForCheckIn(
+                        ci.planId,
+                        ci.scheduledTime,
+                      );
+                      const isCompleted = ci.status === "completed";
+                      const isMissed = ci.status === "missed";
+                      return (
+                        <TouchableOpacity
+                          key={ci.id}
+                          accessibilityRole="button"
+                          onPress={() => onOpenCheckIn(ci.id)}
+                          style={styles.dayDetailRow}
+                        >
+                          <View
+                            style={[
+                              styles.statusDot,
+                              isCompleted
+                                ? styles.success
+                                : isMissed
+                                  ? styles.danger
+                                  : styles.pending,
+                            ]}
+                          />
+                          <View style={styles.rowContent}>
+                            <Text style={styles.rowTitle}>
+                              {item.time} · {plan?.name ?? "Plano"}
+                            </Text>
+                            <Text style={styles.rowMeta}>
+                              {getStatusLabel(ci)}
+                            </Text>
+                            {doses.length > 0 && (
+                              <Text numberOfLines={1} style={styles.doseMeta}>
+                                {doses
+                                  .map(
+                                    (dose) => `${dose.name} ${dose.quantity}x`,
+                                  )
+                                  .join(", ")}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={styles.rowChevron}>›</Text>
+                        </TouchableOpacity>
+                      );
+                    }
+
+                    if (item.kind === "quicklog") {
+                      const ql = item.data;
+                      return (
+                        <View key={ql.id} style={styles.dayDetailRow}>
+                          <View
+                            style={[styles.statusDot, styles.quickLogDot]}
+                          />
+                          <View style={styles.rowContent}>
+                            <Text style={styles.rowTitle}>
+                              {item.time} · {ql.medicationName}
+                            </Text>
+                            <Text style={styles.rowMeta}>
+                              {ql.dosage} · Avulso
+                            </Text>
+                            {ql.notes ? (
+                              <Text style={styles.doseMeta}>{ql.notes}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    const ml = item.data;
+                    const linkedPlan = ml.planId
+                      ? plans.find((p) => p.id === ml.planId)
+                      : null;
                     return (
-                      <View key={ci.id} style={styles.dayDetailRow}>
-                        <View style={[styles.statusDot, isCompleted ? styles.success : isMissed ? styles.danger : styles.pending]} />
+                      <View key={ml.id} style={styles.dayDetailRow}>
+                        <View style={[styles.statusDot, styles.moodDot]} />
                         <View style={styles.rowContent}>
-                          <Text style={styles.rowTitle}>{item.time} · {plan?.name ?? "Plano"}</Text>
-                          <Text style={styles.rowMeta}>{getStatusLabel(ci)}</Text>
-                          {doses.length > 0 && (
-                            <Text numberOfLines={1} style={styles.doseMeta}>
-                              {doses.map((dose) => `${dose.name} ${dose.quantity}x`).join(", ")}
+                          <Text style={styles.rowTitle}>
+                            {item.time} · {ml.feeling}
+                          </Text>
+                          {linkedPlan && (
+                            <Text style={styles.rowMeta}>
+                              {linkedPlan.name}
                             </Text>
                           )}
+                          {ml.text ? (
+                            <Text style={styles.doseMeta}>{ml.text}</Text>
+                          ) : null}
                         </View>
                       </View>
                     );
-                  }
-
-                  if (item.kind === "quicklog") {
-                    const ql = item.data;
-                    return (
-                      <View key={ql.id} style={styles.dayDetailRow}>
-                        <View style={[styles.statusDot, styles.quickLogDot]} />
-                        <View style={styles.rowContent}>
-                          <Text style={styles.rowTitle}>{item.time} · {ql.medicationName}</Text>
-                          <Text style={styles.rowMeta}>{ql.dosage} · Avulso</Text>
-                          {ql.notes ? <Text style={styles.doseMeta}>{ql.notes}</Text> : null}
-                        </View>
-                      </View>
-                    );
-                  }
-
-                  const ml = item.data;
-                  const linkedPlan = ml.planId ? plans.find((p) => p.id === ml.planId) : null;
-                  return (
-                    <View key={ml.id} style={styles.dayDetailRow}>
-                      <View style={[styles.statusDot, styles.moodDot]} />
-                      <View style={styles.rowContent}>
-                        <Text style={styles.rowTitle}>{item.time} · {ml.feeling}</Text>
-                        {linkedPlan && <Text style={styles.rowMeta}>{linkedPlan.name}</Text>}
-                        {ml.text ? <Text style={styles.doseMeta}>{ml.text}</Text> : null}
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          );
-        })()}
+                  })
+                )}
+              </View>
+            );
+          })()}
 
         <View style={styles.legend}>
           <View style={styles.legendItem}>
@@ -364,7 +479,7 @@ const styles = StyleSheet.create({
   calendarCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     padding: spacing.lg,
   },
@@ -503,11 +618,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
     padding: spacing.lg,
+  },
+  rowChevron: {
+    color: colors.textSubtle,
+    fontSize: 20,
+    lineHeight: 24,
   },
   rowContent: {
     flex: 1,

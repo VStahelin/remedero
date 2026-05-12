@@ -1,8 +1,5 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useState } from "react";
 import {
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +10,8 @@ import {
 } from "react-native";
 
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { SelectField } from "@/components/SelectField";
+import { TimePickerModal } from "@/components/TimePickerModal";
 import { colors, radius, spacing, typography } from "@/theme/theme";
 import { Medication, Plan, Weekday } from "@/types/domain";
 
@@ -32,6 +31,7 @@ type AddMedicationScreenProps = {
   initialValues?: AddPlanMedicationInput;
   mode?: "create" | "edit";
   onCancel: () => void;
+  onCreateMedication?: () => void;
   onSubmit: (input: AddPlanMedicationInput) => void;
   plan: Plan;
 };
@@ -67,6 +67,7 @@ export function AddMedicationScreen({
   initialValues,
   mode = "create",
   onCancel,
+  onCreateMedication,
   onSubmit,
   plan,
 }: AddMedicationScreenProps) {
@@ -84,9 +85,9 @@ export function AddMedicationScreen({
   );
   const [error, setError] = useState("");
 
-  const [showPicker, setShowPicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [pickerWeekday, setPickerWeekday] = useState<Weekday>(0);
-  const [pickerTime, setPickerTime] = useState(new Date());
+  const [pickerTimeStr, setPickerTimeStr] = useState("08:00");
 
   function toggleWeekday(weekday: Weekday) {
     setSelectedWeekdays((current) =>
@@ -98,24 +99,16 @@ export function AddMedicationScreen({
 
   function openTimePicker(weekday: Weekday) {
     setPickerWeekday(weekday);
-    const now = new Date();
-    now.setHours(8, 0, 0, 0);
-    setPickerTime(now);
-    setShowPicker(true);
+    setPickerTimeStr("08:00");
+    setShowTimePicker(true);
   }
 
-  function confirmTime(date?: Date) {
-    const d = date ?? pickerTime;
-    const h = String(d.getHours()).padStart(2, "0");
-    const m = String(d.getMinutes()).padStart(2, "0");
-    const timeStr = `${h}:${m}`;
-
+  function confirmTime(timeStr: string) {
     setTimesByWeekday((current) => {
       if (current[pickerWeekday].includes(timeStr)) return current;
       return { ...current, [pickerWeekday]: [...current[pickerWeekday], timeStr].sort() };
     });
-
-    setShowPicker(false);
+    setShowTimePicker(false);
   }
 
   function removeTime(weekday: Weekday, time: string) {
@@ -176,30 +169,23 @@ export function AddMedicationScreen({
           <Text style={styles.cardTitle}>Remedio</Text>
 
           {catalogMedications.length === 0 ? (
-            <Text style={styles.emptyHint}>
-              Nenhum remedio no catalogo. Adicione em Config → Catalogo.
-            </Text>
+            <Text style={styles.emptyHint}>Nenhum remedio no catalogo.</Text>
           ) : (
-            <View style={styles.medGrid}>
-              {catalogMedications.map((med) => {
-                const isSelected = selectedMedicationId === med.id;
-                return (
-                  <TouchableOpacity
-                    key={med.id}
-                    accessibilityRole="button"
-                    onPress={() => setSelectedMedicationId(med.id)}
-                    style={[styles.medChip, isSelected && styles.medChipSelected]}
-                  >
-                    <Text style={[styles.medChipName, isSelected && styles.medChipNameSelected]}>
-                      {med.name}
-                    </Text>
-                    <Text style={[styles.medChipMeta, isSelected && styles.medChipMetaSelected]}>
-                      {med.dosage} · {med.type}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <SelectField
+              onChange={setSelectedMedicationId}
+              options={catalogMedications.map((m) => ({
+                label: `${m.name} ${m.dosage}`,
+                value: m.id,
+              }))}
+              placeholder="Selecione um remedio"
+              value={selectedMedicationId}
+            />
+          )}
+
+          {onCreateMedication && (
+            <TouchableOpacity accessibilityRole="button" onPress={onCreateMedication} style={styles.createLink}>
+              <Text style={styles.createLinkText}>+ Criar novo remedio</Text>
+            </TouchableOpacity>
           )}
 
           {selectedMedication?.description ? (
@@ -287,34 +273,12 @@ export function AddMedicationScreen({
         />
       </ScrollView>
 
-      <Modal animationType="slide" transparent visible={showPicker}>
-        <View style={styles.pickerOverlay}>
-          <View style={styles.pickerSheet}>
-            <View style={styles.pickerHandle} />
-            <Text style={styles.pickerTitle}>
-              {weekdayOptions.find((w) => w.value === pickerWeekday)?.name}
-            </Text>
-            <DateTimePicker
-              display="spinner"
-              is24Hour
-              mode="time"
-              onChange={(event, date) => {
-                if (date) setPickerTime(date);
-                if (Platform.OS === "android") {
-                  if (event.type === "set") confirmTime(date);
-                  else setShowPicker(false);
-                }
-              }}
-              style={styles.picker}
-              value={pickerTime}
-            />
-            <View style={styles.pickerActions}>
-              <PrimaryButton label="Cancelar" onPress={() => setShowPicker(false)} variant="secondary" />
-              <PrimaryButton label="Adicionar" onPress={confirmTime} />
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <TimePickerModal
+        onCancel={() => setShowTimePicker(false)}
+        onConfirm={confirmTime}
+        value={pickerTimeStr}
+        visible={showTimePicker}
+      />
     </>
   );
 }
@@ -398,39 +362,12 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     textTransform: "uppercase",
   },
-  medChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexBasis: "48%",
-    gap: spacing.xs,
-    padding: spacing.md,
+  createLink: {
+    alignSelf: "flex-start",
   },
-  medChipMeta: {
-    color: colors.textSubtle,
-    ...typography.labelSm,
-  },
-  medChipMetaSelected: {
-    color: colors.primaryText,
-    opacity: 0.8,
-  },
-  medChipName: {
-    color: colors.text,
+  createLinkText: {
+    color: colors.primarySoft,
     ...typography.labelMd,
-    fontWeight: "700",
-  },
-  medChipNameSelected: {
-    color: colors.primaryText,
-  },
-  medChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  medGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
   },
   navChip: {
     alignSelf: "flex-start",
@@ -444,39 +381,6 @@ const styles = StyleSheet.create({
   navChipText: {
     color: colors.textMuted,
     ...typography.labelSm,
-  },
-  picker: {
-    height: 150,
-    width: "100%",
-  },
-  pickerActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  pickerHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.border,
-    borderRadius: radius.full,
-    height: 4,
-    width: 40,
-  },
-  pickerOverlay: {
-    backgroundColor: "rgba(0,0,0,0.6)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  pickerSheet: {
-    backgroundColor: colors.surfaceDim,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    gap: spacing.md,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  pickerTitle: {
-    color: colors.text,
-    ...typography.headlineSm,
-    textAlign: "center",
   },
   selectedDesc: {
     borderTopColor: colors.border,

@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     backgroundColor: colors.glass,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",

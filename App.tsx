@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, BackHandler, Platform, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
+import { Alert, BackHandler, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -10,6 +10,20 @@ import {
   AddPlanMedicationInput,
 } from "@/screens/AddMedicationScreen";
 import { exportBackupZip, importBackupZip } from "@/storage/backupZip";
+import {
+  AlarmSlot,
+  areMedicationAlarmsAvailable,
+  cancelAlarmsForPlan,
+  cancelAlarmsForSlot,
+  getAlarmPermissionStatus,
+  playForegroundAlarmSound,
+  requestAlarmPermissions,
+  scheduleAlarmsForPlan,
+  stopForegroundAlarmSound,
+  subscribeToAlarmNotifications,
+} from "@/notifications/alarms";
+import { AlarmScreen } from "@/screens/AlarmScreen";
+import { CheckInDetailScreen } from "@/screens/CheckInDetailScreen";
 import { CheckInScreen } from "@/screens/CheckInScreen";
 import { CreatePlanInput, CreatePlanScreen } from "@/screens/CreatePlanScreen";
 import { HistoryScreen } from "@/screens/HistoryScreen";
@@ -38,6 +52,7 @@ import {
   dbDeletePlanNotesByPlanId,
   dbClearAllTables,
   dbDeletePlan,
+  dbGetAlarmSettings,
   dbGetMoodLogs,
   dbGetQuickLogs,
   dbInsertMoodLog,
@@ -58,16 +73,27 @@ import {
   dbInsertPlan,
   dbUpdateCheckIn,
   dbUpdateMedication,
+  dbUpdateAlarmSettings,
   dbUpdatePlanMedication,
   dbUpdatePlan,
   initializeDatabase,
 } from "@/storage/database";
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, CheckInMedication, MedicationDose, MoodLog, QuickLog, Weekday } from "@/types/domain";
+import {
+  AlarmSettings,
+  CheckIn,
+  CheckInMedication,
+  DEFAULT_ALARM_SETTINGS,
+  MedicationDose,
+  MoodLog,
+  QuickLog,
+  Weekday,
+} from "@/types/domain";
 
 type MainTab = "home" | "plans" | "history" | "settings";
 type AppView =
   | MainTab
+  | "alarm"
   | "checkin"
   | "createPlan"
   | "editPlan"
@@ -78,7 +104,8 @@ type AppView =
   | "medicationCatalog"
   | "addCatalogMedication"
   | "editCatalogMedication"
-  | "addMood";
+  | "addMood"
+  | "checkInDetail";
 
 const tabs: Array<{ key: MainTab; label: string }> = [
   { key: "home", label: "Home" },
@@ -119,9 +146,18 @@ function AppShell() {
   const [planNotes, setPlanNotes] = useState<ReturnType<typeof dbGetPlanNotes>>([]);
   const [quickLogs, setQuickLogs] = useState<ReturnType<typeof dbGetQuickLogs>>([]);
   const [moodLogs, setMoodLogs] = useState<ReturnType<typeof dbGetMoodLogs>>([]);
+  const [alarmSettings, setAlarmSettings] =
+    useState<AlarmSettings>(DEFAULT_ALARM_SETTINGS);
+  const [alarmPermissionStatus, setAlarmPermissionStatus] = useState("undetermined");
+  const [alarmInfo, setAlarmInfo] = useState<{ planId: string; scheduledTime: string; planName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null);
   const [selectedPlanMedicationId, setSelectedPlanMedicationId] = useState<string | null>(null);
   const [selectedCatalogMedicationId, setSelectedCatalogMedicationId] = useState<string | null>(null);
+  const [selectedCheckInSlot, setSelectedCheckInSlot] = useState<{
+    planId: string;
+    scheduledTime: string;
+  } | null>(null);
   const insets = useSafeAreaInsets();
   const view = navigationStack[navigationStack.length - 1] ?? "home";
 
@@ -137,9 +173,31 @@ function AppShell() {
     setPlanNotes(dbGetPlanNotes());
     setQuickLogs(dbGetQuickLogs());
     setMoodLogs(dbGetMoodLogs());
+    setAlarmSettings(dbGetAlarmSettings());
 
     setIsDbReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!areMedicationAlarmsAvailable()) {
+      setAlarmPermissionStatus("unavailable");
+      return;
+    }
+
+    void (async () => {
+      const granted = alarmSettings.enabled ? await requestAlarmPermissions() : true;
+      setAlarmPermissionStatus(await getAlarmPermissionStatus());
+
+      if (alarmSettings.enabled && !granted) {
+        Alert.alert(
+          "Permissao de notificacao",
+          "Ative as notificacoes para receber os alarmes dos check-ins.",
+        );
+      }
+    })().catch(() => {
+      Alert.alert("Alarmes indisponiveis", "Nao foi possivel configurar os alarmes agora.");
+    });
+  }, [alarmSettings]);
 
   useEffect(() => {
     if (isDbReady && plans.length > 0 && selectedPlanId === null) {
@@ -204,6 +262,7 @@ function AppShell() {
           (ci) => ci.planId === slot.planId && ci.scheduledTime === slot.scheduledTime,
         );
         return {
+          checkInId: checkIn?.id ?? null,
           planName: plan?.name ?? "",
           scheduledTime: slot.scheduledTime,
           status: (checkIn?.status ?? "pending") as "completed" | "pending" | "missed",
@@ -264,6 +323,27 @@ function AppShell() {
     [planMedicationSchedules, planMedications],
   );
 
+  const getAlarmSlotsForPlan = useCallback(
+    (planId: string): AlarmSlot[] => {
+      const planMedicationIds = new Set(
+        planMedications.filter((item) => item.planId === planId).map((item) => item.id),
+      );
+      const slotMap = new Map<string, AlarmSlot>();
+
+      planMedicationSchedules
+        .filter((schedule) => planMedicationIds.has(schedule.planMedicationId))
+        .forEach((schedule) => {
+          slotMap.set(`${schedule.weekday}|${schedule.scheduledTime}`, {
+            scheduledTime: schedule.scheduledTime,
+            weekday: schedule.weekday,
+          });
+        });
+
+      return [...slotMap.values()];
+    },
+    [planMedicationSchedules, planMedications],
+  );
+
   const getPlanMedicationSummaries = useCallback(
     (planId: string): PlanMedicationSummary[] =>
       planMedications
@@ -300,6 +380,7 @@ function AppShell() {
 
   const getPlanStats = useCallback(
     (planId: string): PlanStats => {
+      const plan = plans.find((p) => p.id === planId);
       const planCheckIns = checkIns.filter((checkIn) => checkIn.planId === planId);
       const completedCheckIns = planCheckIns.filter(
         (checkIn) => checkIn.status === "completed",
@@ -315,6 +396,25 @@ function AppShell() {
         planMedicationIds.has(schedule.planMedicationId),
       ).length;
 
+      const startDate = plan?.startDate ?? new Date().toISOString().split("T")[0];
+      const totalDays = plan?.durationDays ?? null;
+
+      const todayMs = new Date().setHours(0, 0, 0, 0);
+      const startMs = new Date(startDate + "T00:00:00").getTime();
+      const daysElapsed = Math.max(0, Math.floor((todayMs - startMs) / 86400000));
+
+      const progressPercent =
+        totalDays != null ? Math.min(100, Math.round((daysElapsed / totalDays) * 100)) : null;
+
+      const endDate =
+        totalDays != null
+          ? (() => {
+              const d = new Date(startDate + "T00:00:00");
+              d.setDate(d.getDate() + totalDays - 1);
+              return d.toISOString().split("T")[0];
+            })()
+          : null;
+
       return {
         totalCheckIns: planCheckIns.length,
         completedCheckIns,
@@ -324,14 +424,46 @@ function AppShell() {
           finishedCheckIns === 0 ? 0 : Math.round((completedCheckIns / finishedCheckIns) * 100),
         medicationCount,
         scheduleCount,
+        progressPercent,
+        daysElapsed,
+        totalDays,
+        endDate,
+        startDate,
       };
     },
-    [checkIns, planMedicationSchedules, planMedications],
+    [checkIns, planMedicationSchedules, planMedications, plans],
   );
 
   const nextDoses = useMemo(
     () => (nextPlan && nextSlot ? getMedicationDosesForPlan(nextPlan.id, nextSlot.scheduledTime) : []),
     [getMedicationDosesForPlan, nextPlan, nextSlot],
+  );
+
+  const nextPlanProgress = useMemo(() => {
+    if (!nextPlan) return null;
+    const s = getPlanStats(nextPlan.id);
+    return {
+      completionRate: s.completionRate,
+      progressPercent: s.progressPercent,
+      daysElapsed: s.daysElapsed,
+      totalDays: s.totalDays,
+    };
+  }, [nextPlan, getPlanStats]);
+
+  const activeCheckInSlot = selectedCheckInSlot ?? nextSlot ?? null;
+  const activeCheckInPlan = useMemo(
+    () =>
+      activeCheckInSlot
+        ? (plans.find((plan) => plan.id === activeCheckInSlot.planId) ?? null)
+        : null,
+    [activeCheckInSlot, plans],
+  );
+  const activeCheckInDoses = useMemo(
+    () =>
+      activeCheckInSlot
+        ? getMedicationDosesForPlan(activeCheckInSlot.planId, activeCheckInSlot.scheduledTime)
+        : [],
+    [activeCheckInSlot, getMedicationDosesForPlan],
   );
 
 
@@ -350,6 +482,15 @@ function AppShell() {
       return [...currentStack, nextView];
     });
   }, []);
+
+  const openCheckInSlot = useCallback(
+    (slot: { planId: string; scheduledTime: string }) => {
+      setSelectedCheckInSlot(slot);
+      setSelectedPlanId(slot.planId);
+      navigateTo("checkin");
+    },
+    [navigateTo],
+  );
 
   const goBack = useCallback(() => {
     setNavigationStack((currentStack) => {
@@ -373,6 +514,51 @@ function AppShell() {
 
     return () => subscription.remove();
   }, [goBack, view]);
+
+  useEffect(() => {
+    if (view !== "checkin" && selectedCheckInSlot) {
+      setSelectedCheckInSlot(null);
+    }
+  }, [selectedCheckInSlot, view]);
+
+  useEffect(() => {
+    return subscribeToAlarmNotifications({
+      onOpenAlarm: (alarmData) => {
+        const plan = plans.find((p) => p.id === alarmData.planId);
+        setAlarmInfo({
+          planId: alarmData.planId,
+          scheduledTime: alarmData.scheduledTime,
+          planName: plan?.name ?? "",
+        });
+        navigateTo("alarm");
+        void playForegroundAlarmSound();
+      },
+      onSnoozeAlarm: (_alarmData) => {
+        void stopForegroundAlarmSound();
+        setAlarmInfo(null);
+        navigateTo("home");
+      },
+    });
+  }, [navigateTo, plans]);
+
+  useEffect(() => {
+    if (!isDbReady) {
+      return;
+    }
+
+    if (!alarmSettings.enabled) {
+      void Promise.all(plans.map((plan) => cancelAlarmsForPlan(plan.id))).catch(() => undefined);
+      return;
+    }
+
+    void Promise.all(
+      plans
+        .filter((plan) => plan.isActive)
+        .map((plan) =>
+          scheduleAlarmsForPlan(plan.id, plan.name, getAlarmSlotsForPlan(plan.id), alarmSettings),
+        ),
+    ).catch(() => undefined);
+  }, [alarmSettings, getAlarmSlotsForPlan, isDbReady, plans]);
 
   async function handleExport() {
     const zipUri = await exportBackupZip({
@@ -460,6 +646,7 @@ function AppShell() {
             setCheckIns(dbGetCheckIns());
             setCheckInMedications(dbGetCheckInMedications());
             setPlanNotes(dbGetPlanNotes());
+            setAlarmSettings(dbGetAlarmSettings());
 
             setSelectedPlanId(null);
             setNavigationStack(["home"]);
@@ -469,7 +656,38 @@ function AppShell() {
     );
   }
 
+  function handleUpdateAlarmSettings(nextSettings: AlarmSettings) {
+    dbUpdateAlarmSettings(nextSettings);
+    setAlarmSettings(nextSettings);
+  }
+
+  async function handleRequestAlarmPermission() {
+    if (!areMedicationAlarmsAvailable()) {
+      setAlarmPermissionStatus("unavailable");
+      Alert.alert(
+        "Alarmes no Expo Go",
+        "O Expo Go nao suporta esses alarmes no Android. Instale uma development build ou APK para testar notificacoes.",
+      );
+      return;
+    }
+
+    const granted = await requestAlarmPermissions();
+    setAlarmPermissionStatus(await getAlarmPermissionStatus());
+
+    if (!granted) {
+      Alert.alert(
+        "Permissao necessaria",
+        "Ative as notificacoes para receber os alarmes dos check-ins.",
+      );
+    }
+  }
+
+  function handleOpenAlarmSystemSettings() {
+    void Linking.openSettings();
+  }
+
   function handleClearData() {
+    void Promise.all(plans.map((plan) => cancelAlarmsForPlan(plan.id)));
     dbClearAllTables();
     setPlans([]);
     setMedications([]);
@@ -480,6 +698,7 @@ function AppShell() {
     setPlanNotes([]);
     setQuickLogs([]);
     setMoodLogs([]);
+    setAlarmSettings(DEFAULT_ALARM_SETTINGS);
     setSelectedPlanId(null);
     setNavigationStack(["home"]);
   }
@@ -492,6 +711,8 @@ function AppShell() {
       name: input.name,
       description: input.description,
       isActive: true,
+      startDate: input.startDate,
+      durationDays: input.durationDays,
     };
 
     dbInsertPlan(plan);
@@ -511,7 +732,13 @@ function AppShell() {
           return plan;
         }
 
-        const updated = { ...plan, name: input.name, description: input.description };
+        const updated = {
+          ...plan,
+          name: input.name,
+          description: input.description,
+          startDate: input.startDate,
+          durationDays: input.durationDays,
+        };
         dbUpdatePlan(updated);
 
         return updated;
@@ -551,39 +778,43 @@ function AppShell() {
       return;
     }
 
+    const planIdToDelete = selectedPlanId;
+
     Alert.alert("Excluir plano", "Deseja excluir este plano e suas relacoes locais?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Excluir",
         style: "destructive",
         onPress: () => {
+          void cancelAlarmsForPlan(planIdToDelete);
+
           const planMedicationIds = new Set(
             planMedications
-              .filter((item) => item.planId === selectedPlanId)
+              .filter((item) => item.planId === planIdToDelete)
               .map((item) => item.id),
           );
 
-          dbDeleteCheckInMedicationsByPlanId(selectedPlanId);
-          dbDeleteCheckInsByPlanId(selectedPlanId);
+          dbDeleteCheckInMedicationsByPlanId(planIdToDelete);
+          dbDeleteCheckInsByPlanId(planIdToDelete);
           dbDeletePlanMedicationSchedulesByPlanMedicationIds([...planMedicationIds]);
-          dbDeletePlanMedicationsByPlanId(selectedPlanId);
-          dbDeletePlanNotesByPlanId(selectedPlanId);
-          dbDeletePlan(selectedPlanId);
+          dbDeletePlanMedicationsByPlanId(planIdToDelete);
+          dbDeletePlanNotesByPlanId(planIdToDelete);
+          dbDeletePlan(planIdToDelete);
 
-          setPlans((current) => current.filter((plan) => plan.id !== selectedPlanId));
+          setPlans((current) => current.filter((plan) => plan.id !== planIdToDelete));
           setPlanMedications((current) =>
-            current.filter((item) => item.planId !== selectedPlanId),
+            current.filter((item) => item.planId !== planIdToDelete),
           );
           setPlanMedicationSchedules((current) =>
             current.filter((schedule) => !planMedicationIds.has(schedule.planMedicationId)),
           );
-          setPlanNotes((current) => current.filter((note) => note.planId !== selectedPlanId));
-          setCheckIns((current) => current.filter((ci) => ci.planId !== selectedPlanId));
+          setPlanNotes((current) => current.filter((note) => note.planId !== planIdToDelete));
+          setCheckIns((current) => current.filter((ci) => ci.planId !== planIdToDelete));
           setCheckInMedications((current) =>
             current.filter(
               (cim) =>
                 !checkIns.some(
-                  (ci) => ci.id === cim.checkInId && ci.planId === selectedPlanId,
+                  (ci) => ci.id === cim.checkInId && ci.planId === planIdToDelete,
                 ),
             ),
           );
@@ -676,6 +907,7 @@ function AppShell() {
 
     snapshots.forEach(dbInsertCheckInMedication);
     setCheckInMedications((current) => [...current, ...snapshots]);
+    await cancelAlarmsForSlot(planId, new Date().getDay() as Weekday, scheduledTime, alarmSettings);
   }
 
   function handleEditMedicationInSelectedPlan(input: AddPlanMedicationInput) {
@@ -807,17 +1039,45 @@ function AppShell() {
   }
 
   function renderContent() {
-    if (view === "checkin" && nextPlan) {
+    if (view === "alarm" && alarmInfo) {
       return (
-        <CheckInScreen
-          doses={nextDoses}
-          onCancel={() => navigateTo("home")}
-          onComplete={async (photoUri) => {
-            await handleCompleteCheckIn(nextPlan.id, nextScheduledTime, photoUri, nextDoses);
+        <AlarmScreen
+          planName={alarmInfo.planName}
+          scheduledTime={alarmInfo.scheduledTime}
+          onRegister={async () => {
+            await stopForegroundAlarmSound();
+            setAlarmInfo(null);
+            openCheckInSlot({ planId: alarmInfo.planId, scheduledTime: alarmInfo.scheduledTime });
+          }}
+          onSnooze={() => {
+            void stopForegroundAlarmSound();
+            setAlarmInfo(null);
             navigateTo("home");
           }}
-          plan={nextPlan}
-          scheduledTime={nextScheduledTime}
+        />
+      );
+    }
+
+    if (view === "checkin" && activeCheckInPlan && activeCheckInSlot) {
+      return (
+        <CheckInScreen
+          doses={activeCheckInDoses}
+          onCancel={() => {
+            setSelectedCheckInSlot(null);
+            navigateTo("home");
+          }}
+          onComplete={async (photoUri) => {
+            await handleCompleteCheckIn(
+              activeCheckInPlan.id,
+              activeCheckInSlot.scheduledTime,
+              photoUri,
+              activeCheckInDoses,
+            );
+            setSelectedCheckInSlot(null);
+            navigateTo("home");
+          }}
+          plan={activeCheckInPlan}
+          scheduledTime={activeCheckInSlot.scheduledTime}
         />
       );
     }
@@ -845,7 +1105,9 @@ function AppShell() {
         <CreatePlanScreen
           initialValues={{
             description: selectedPlan.description,
+            durationDays: selectedPlan.durationDays,
             name: selectedPlan.name,
+            startDate: selectedPlan.startDate,
           }}
           mode="edit"
           onCancel={goBack}
@@ -865,6 +1127,7 @@ function AppShell() {
         <AddMedicationScreen
           catalogMedications={medications}
           onCancel={goBack}
+          onCreateMedication={() => navigateTo("addCatalogMedication")}
           onSubmit={handleAddMedicationToSelectedPlan}
           plan={selectedPlan}
         />
@@ -893,6 +1156,7 @@ function AppShell() {
           }}
           mode="edit"
           onCancel={goBack}
+          onCreateMedication={() => navigateTo("addCatalogMedication")}
           onSubmit={handleEditMedicationInSelectedPlan}
           plan={selectedPlan}
         />
@@ -984,6 +1248,21 @@ function AppShell() {
       );
     }
 
+    if (view === "checkInDetail") {
+      const checkIn = checkIns.find((ci) => ci.id === selectedCheckInId);
+      if (!checkIn) return null;
+      const ciPlan = plans.find((p) => p.id === checkIn.planId);
+      const ciMedications = checkInMedications.filter((m) => m.checkInId === checkIn.id);
+      return (
+        <CheckInDetailScreen
+          checkIn={checkIn}
+          medications={ciMedications}
+          onBack={goBack}
+          plan={ciPlan}
+        />
+      );
+    }
+
     if (view === "history") {
       return (
         <HistoryScreen
@@ -993,6 +1272,10 @@ function AppShell() {
           }
           moodLogs={moodLogs}
           onAddMood={() => navigateTo("addMood")}
+          onOpenCheckIn={(id) => {
+            setSelectedCheckInId(id);
+            navigateTo("checkInDetail");
+          }}
           onQuickLog={() => navigateTo("quickLog")}
           plans={plans}
           quickLogs={quickLogs}
@@ -1003,10 +1286,15 @@ function AppShell() {
     if (view === "settings") {
       return (
         <SettingsScreen
+          alarmPermissionStatus={alarmPermissionStatus}
+          alarmSettings={alarmSettings}
           onClearData={handleClearData}
           onExport={handleExport}
           onImport={handleImport}
+          onOpenAlarmSystemSettings={handleOpenAlarmSystemSettings}
           onOpenCatalog={() => navigateTo("medicationCatalog")}
+          onRequestAlarmPermission={handleRequestAlarmPermission}
+          onUpdateAlarmSettings={handleUpdateAlarmSettings}
         />
       );
     }
@@ -1015,9 +1303,11 @@ function AppShell() {
       <HomeScreen
         doses={nextDoses}
         nextPlan={nextPlan}
+        nextPlanProgress={nextPlanProgress}
         onAddMood={() => navigateTo("addMood")}
+        onOpenCheckIn={(id) => { setSelectedCheckInId(id); navigateTo("checkInDetail"); }}
         onQuickLog={() => navigateTo("quickLog")}
-        onStartCheckIn={() => navigateTo(nextPlan ? "checkin" : "plans")}
+        onStartCheckIn={() => (nextSlot ? openCheckInSlot(nextSlot) : navigateTo("plans"))}
         scheduledTime={nextScheduledTime}
         todayCompleted={todayCompleted}
         todayEntries={todayEntries}
@@ -1038,7 +1328,8 @@ function AppShell() {
     >
       <StatusBar backgroundColor={colors.background} barStyle="light-content" />
       <View style={styles.container}>{renderContent()}</View>
-      {view !== "checkin" &&
+      {view !== "alarm" &&
+      view !== "checkin" &&
       view !== "createPlan" &&
       view !== "editPlan" &&
       view !== "planDetail" &&
@@ -1048,7 +1339,8 @@ function AppShell() {
       view !== "medicationCatalog" &&
       view !== "addCatalogMedication" &&
       view !== "editCatalogMedication" &&
-      view !== "addMood" ? (
+      view !== "addMood" &&
+      view !== "checkInDetail" ? (
         <View style={styles.tabs}>
           {tabs.map((tab) => {
             const isActive = view === tab.key;

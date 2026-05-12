@@ -1,8 +1,10 @@
 import * as SQLite from "expo-sqlite";
 
 import {
+  AlarmSettings,
   CheckIn,
   CheckInMedication,
+  DEFAULT_ALARM_SETTINGS,
   Medication,
   MoodLog,
   Plan,
@@ -21,7 +23,9 @@ export function initializeDatabase() {
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
       description TEXT NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 1
+      is_active INTEGER NOT NULL DEFAULT 1,
+      start_date TEXT,
+      duration_days INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS medications (
@@ -89,40 +93,66 @@ export function initializeDatabase() {
       text TEXT,
       plan_id TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS alarm_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      enabled INTEGER NOT NULL,
+      snooze_minutes INTEGER NOT NULL,
+      retry_count INTEGER NOT NULL
+    );
+
+    INSERT OR IGNORE INTO alarm_settings (id, enabled, snooze_minutes, retry_count)
+    VALUES ('default', 1, 10, 6);
   `);
+
+  // Migracao: adiciona colunas ao plano (ignora se ja existirem)
+  try { database.execSync("ALTER TABLE plans ADD COLUMN start_date TEXT"); } catch {}
+  try { database.execSync("ALTER TABLE plans ADD COLUMN duration_days INTEGER"); } catch {}
 }
 
 // Plans
 
 export function dbGetPlans(): Plan[] {
+  const today = new Date().toISOString().split("T")[0];
   return database
-    .getAllSync<{ id: string; name: string; description: string; is_active: number }>(
-      "SELECT * FROM plans ORDER BY rowid ASC",
-    )
+    .getAllSync<{
+      id: string;
+      name: string;
+      description: string;
+      is_active: number;
+      start_date: string | null;
+      duration_days: number | null;
+    }>("SELECT * FROM plans ORDER BY rowid ASC")
     .map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
       isActive: row.is_active === 1,
+      startDate: row.start_date ?? today,
+      durationDays: row.duration_days ?? null,
     }));
 }
 
 export function dbInsertPlan(plan: Plan): void {
   database.runSync(
-    "INSERT INTO plans (id, name, description, is_active) VALUES (?, ?, ?, ?)",
+    "INSERT INTO plans (id, name, description, is_active, start_date, duration_days) VALUES (?, ?, ?, ?, ?, ?)",
     plan.id,
     plan.name,
     plan.description,
     plan.isActive ? 1 : 0,
+    plan.startDate,
+    plan.durationDays ?? null,
   );
 }
 
 export function dbUpdatePlan(plan: Plan): void {
   database.runSync(
-    "UPDATE plans SET name = ?, description = ?, is_active = ? WHERE id = ?",
+    "UPDATE plans SET name = ?, description = ?, is_active = ?, start_date = ?, duration_days = ? WHERE id = ?",
     plan.name,
     plan.description,
     plan.isActive ? 1 : 0,
+    plan.startDate,
+    plan.durationDays ?? null,
     plan.id,
   );
 }
@@ -441,6 +471,53 @@ export function dbInsertMoodLog(log: MoodLog): void {
   );
 }
 
+// AlarmSettings
+
+function ensureAlarmSettingsTable(): void {
+  database.execSync(`
+    CREATE TABLE IF NOT EXISTS alarm_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      enabled INTEGER NOT NULL,
+      snooze_minutes INTEGER NOT NULL,
+      retry_count INTEGER NOT NULL
+    );
+
+    INSERT OR IGNORE INTO alarm_settings (id, enabled, snooze_minutes, retry_count)
+    VALUES ('default', 1, 10, 6);
+  `);
+}
+
+export function dbGetAlarmSettings(): AlarmSettings {
+  ensureAlarmSettingsTable();
+
+  const row = database.getFirstSync<{
+    enabled: number;
+    retry_count: number;
+    snooze_minutes: number;
+  }>("SELECT enabled, snooze_minutes, retry_count FROM alarm_settings WHERE id = 'default'");
+
+  if (!row) {
+    return DEFAULT_ALARM_SETTINGS;
+  }
+
+  return {
+    enabled: row.enabled === 1,
+    retryCount: row.retry_count,
+    snoozeMinutes: row.snooze_minutes,
+  };
+}
+
+export function dbUpdateAlarmSettings(settings: AlarmSettings): void {
+  ensureAlarmSettingsTable();
+
+  database.runSync(
+    "INSERT OR REPLACE INTO alarm_settings (id, enabled, snooze_minutes, retry_count) VALUES ('default', ?, ?, ?)",
+    settings.enabled ? 1 : 0,
+    settings.snoozeMinutes,
+    settings.retryCount,
+  );
+}
+
 export function dbClearAllTables(): void {
   database.execSync(`
     DELETE FROM check_in_medications;
@@ -452,5 +529,9 @@ export function dbClearAllTables(): void {
     DELETE FROM plans;
     DELETE FROM quick_logs;
     DELETE FROM mood_logs;
+    DELETE FROM alarm_settings;
+
+    INSERT OR REPLACE INTO alarm_settings (id, enabled, snooze_minutes, retry_count)
+    VALUES ('default', 1, 10, 6);
   `);
 }
