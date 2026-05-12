@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Remedero",
+    "slug": "remedero",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "remedero",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A"
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Remedero usa fotos para registrar seus check-ins.",
+          "cameraPermission": "Remedero precisa da camera para confirmar check-ins com foto."
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-sharing"
+    ]
+  }
+}
