@@ -5,7 +5,10 @@
       "Bash(npx expo *)",
       "Bash(node *)",
       "Bash(npm install *)",
-      "Bash(xargs grep -l \"ModulesProvider\\\\|ApplicationModuleProvider\\\\|ModuleRegistry\")"
+      "Bash(xargs grep -l \"ModulesProvider\\\\|ApplicationModuleProvider\\\\|ModuleRegistry\")",
+      "Bash(make create-release *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
