@@ -10,7 +10,7 @@ type CheckInScreenProps = {
   plan: Plan;
   doses: MedicationDose[];
   onCancel: () => void;
-  onComplete: (photoUri: string) => void;
+  onComplete: (photoUri: string) => Promise<void>;
   scheduledTime: string;
 };
 
@@ -22,6 +22,7 @@ export function CheckInScreen({
   scheduledTime,
 }: CheckInScreenProps) {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleTakePhoto() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -81,8 +82,20 @@ export function CheckInScreen({
         <PrimaryButton label="Tirar foto" onPress={handleTakePhoto} />
       ) : (
         <View style={styles.actions}>
-          <PrimaryButton label="Refazer" onPress={() => setPhotoUri(null)} variant="secondary" />
-          <PrimaryButton label="Confirmar" onPress={() => onComplete(photoUri)} />
+          <PrimaryButton
+            disabled={isSubmitting}
+            label="Refazer"
+            onPress={() => setPhotoUri(null)}
+            variant="secondary"
+          />
+          <PrimaryButton
+            disabled={isSubmitting}
+            label={isSubmitting ? "Salvando..." : "Confirmar"}
+            onPress={async () => {
+              setIsSubmitting(true);
+              await onComplete(photoUri);
+            }}
+          />
         </View>
       )}
 

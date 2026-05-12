@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { colors, radius, spacing, typography } from "@/theme/theme";
@@ -6,9 +6,10 @@ import { colors, radius, spacing, typography } from "@/theme/theme";
 type SettingsScreenProps = {
   onExport: () => void;
   onImport: () => void;
+  onOpenCatalog: () => void;
 };
 
-export function SettingsScreen({ onExport, onImport }: SettingsScreenProps) {
+export function SettingsScreen({ onExport, onImport, onOpenCatalog }: SettingsScreenProps) {
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.glowOrb} />
@@ -18,20 +19,28 @@ export function SettingsScreen({ onExport, onImport }: SettingsScreenProps) {
         <Text style={styles.subtitle}>Controle e portabilidade sem servidor.</Text>
       </View>
 
+      <TouchableOpacity accessibilityRole="button" onPress={onOpenCatalog} style={styles.card}>
+        <Text style={styles.cardTitle}>Catalogo de remedios</Text>
+        <Text style={styles.cardText}>
+          Gerencie sua lista de remedios para uso rapido em registros avulsos e planos.
+        </Text>
+        <Text style={styles.cardAction}>Ver catalogo →</Text>
+      </TouchableOpacity>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Exportar backup</Text>
         <Text style={styles.cardText}>
-          Salva todos os planos, medicamentos e check-ins em um arquivo JSON.
+          Gera um arquivo ZIP com todos os dados e as fotos dos check-ins.
         </Text>
-        <PrimaryButton label="Exportar JSON" onPress={onExport} variant="secondary" />
+        <PrimaryButton label="Exportar ZIP" onPress={onExport} variant="secondary" />
       </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Importar backup</Text>
         <Text style={styles.cardText}>
-          Restaura um backup JSON. Todos os dados atuais serao substituidos.
+          Restaura um backup ZIP com dados e fotos. Todos os dados atuais serao substituidos.
         </Text>
-        <PrimaryButton label="Importar JSON" onPress={onImport} variant="secondary" />
+        <PrimaryButton label="Importar ZIP" onPress={onImport} variant="secondary" />
       </View>
     </ScrollView>
   );
@@ -45,6 +54,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.lg,
+  },
+  cardAction: {
+    color: colors.primarySoft,
+    ...typography.labelMd,
   },
   cardText: {
     color: colors.textSubtle,

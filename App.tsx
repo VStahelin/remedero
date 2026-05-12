@@ -9,7 +9,7 @@ import {
   AddMedicationScreen,
   AddPlanMedicationInput,
 } from "@/screens/AddMedicationScreen";
-import { createJsonDumpFromSnapshot, parseAndValidateDump } from "@/storage/exportDump";
+import { exportBackupZip, importBackupZip } from "@/storage/backupZip";
 import { CheckInScreen } from "@/screens/CheckInScreen";
 import { CreatePlanInput, CreatePlanScreen } from "@/screens/CreatePlanScreen";
 import { HistoryScreen } from "@/screens/HistoryScreen";
@@ -21,15 +21,24 @@ import {
   PlanStats,
 } from "@/screens/PlanDetailScreen";
 import { PlansScreen } from "@/screens/PlansScreen";
+import {
+  AddCatalogMedicationScreen,
+  CatalogMedicationInput,
+} from "@/screens/AddCatalogMedicationScreen";
+import { MedicationCatalogScreen } from "@/screens/MedicationCatalogScreen";
+import { QuickLogInput, QuickLogScreen } from "@/screens/QuickLogScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import {
   dbDeleteCheckInMedicationsByPlanId,
   dbDeleteCheckInsByPlanId,
+  dbDeleteMedication,
   dbDeletePlanMedicationSchedulesByPlanMedicationIds,
   dbDeletePlanMedicationsByPlanId,
   dbDeletePlanNotesByPlanId,
   dbClearAllTables,
   dbDeletePlan,
+  dbGetQuickLogs,
+  dbInsertQuickLog,
   dbGetCheckInMedications,
   dbGetCheckIns,
   dbGetMedications,
@@ -50,9 +59,8 @@ import {
   dbUpdatePlan,
   initializeDatabase,
 } from "@/storage/database";
-import { seedDatabase } from "@/storage/seed";
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, CheckInMedication, MedicationDose } from "@/types/domain";
+import { CheckIn, CheckInMedication, MedicationDose, QuickLog, Weekday } from "@/types/domain";
 
 type MainTab = "home" | "plans" | "history" | "settings";
 type AppView =
@@ -62,7 +70,11 @@ type AppView =
   | "editPlan"
   | "planDetail"
   | "addMedication"
-  | "editMedication";
+  | "editMedication"
+  | "quickLog"
+  | "medicationCatalog"
+  | "addCatalogMedication"
+  | "editCatalogMedication";
 
 const tabs: Array<{ key: MainTab; label: string }> = [
   { key: "home", label: "Home" },
@@ -101,19 +113,15 @@ function AppShell() {
     ReturnType<typeof dbGetCheckInMedications>
   >([]);
   const [planNotes, setPlanNotes] = useState<ReturnType<typeof dbGetPlanNotes>>([]);
+  const [quickLogs, setQuickLogs] = useState<ReturnType<typeof dbGetQuickLogs>>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedPlanMedicationId, setSelectedPlanMedicationId] = useState<string | null>(null);
+  const [selectedCatalogMedicationId, setSelectedCatalogMedicationId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const view = navigationStack[navigationStack.length - 1] ?? "home";
 
   useEffect(() => {
     initializeDatabase();
-
-    const storedPlans = dbGetPlans();
-
-    if (storedPlans.length === 0) {
-      seedDatabase();
-    }
 
     setPlans(dbGetPlans());
     setMedications(dbGetMedications());
@@ -122,6 +130,7 @@ function AppShell() {
     setCheckIns(dbGetCheckIns());
     setCheckInMedications(dbGetCheckInMedications());
     setPlanNotes(dbGetPlanNotes());
+    setQuickLogs(dbGetQuickLogs());
 
     setIsDbReady(true);
   }, []);
@@ -132,26 +141,75 @@ function AppShell() {
     }
   }, [isDbReady, plans, selectedPlanId]);
 
-  const nextPlan = plans[0];
-  const nextScheduledTime = useMemo(() => {
-    if (!nextPlan) {
-      return "08:00";
-    }
+  const today = formatDate(new Date());
+  const todayWeekday = new Date().getDay() as Weekday;
 
-    const planMedicationIds = new Set(
-      planMedications.filter((item) => item.planId === nextPlan.id).map((item) => item.id),
-    );
+  // All { planId, scheduledTime } slots scheduled for today's weekday
+  const todaySlots = useMemo(() => {
+    return plans
+      .flatMap((plan) => {
+        const planMedIds = new Set(
+          planMedications.filter((pm) => pm.planId === plan.id).map((pm) => pm.id),
+        );
+        const times = Array.from(
+          new Set(
+            planMedicationSchedules
+              .filter((s) => planMedIds.has(s.planMedicationId) && s.weekday === todayWeekday)
+              .map((s) => s.scheduledTime),
+          ),
+        );
+        return times.map((time) => ({ planId: plan.id, scheduledTime: time }));
+      })
+      .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+  }, [plans, planMedications, planMedicationSchedules, todayWeekday]);
 
-    const times = Array.from(
+  const todayCheckIns = useMemo(
+    () => checkIns.filter((ci) => ci.date === today),
+    [checkIns, today],
+  );
+
+  const completedSlotKeys = useMemo(
+    () =>
       new Set(
-        planMedicationSchedules
-          .filter((schedule) => planMedicationIds.has(schedule.planMedicationId))
-          .map((schedule) => schedule.scheduledTime),
+        todayCheckIns
+          .filter((ci) => ci.status === "completed")
+          .map((ci) => `${ci.planId}|${ci.scheduledTime}`),
       ),
-    ).sort();
+    [todayCheckIns],
+  );
 
-    return times[0] ?? "08:00";
-  }, [nextPlan, planMedications, planMedicationSchedules]);
+  const nextSlot = useMemo(
+    () => todaySlots.find((s) => !completedSlotKeys.has(`${s.planId}|${s.scheduledTime}`)),
+    [todaySlots, completedSlotKeys],
+  );
+
+  const nextPlan = useMemo(
+    () => (nextSlot ? (plans.find((p) => p.id === nextSlot.planId) ?? null) : null),
+    [nextSlot, plans],
+  );
+
+  const nextScheduledTime = nextSlot?.scheduledTime ?? "--:--";
+
+  const todayEntries = useMemo(
+    () =>
+      todaySlots.map((slot) => {
+        const plan = plans.find((p) => p.id === slot.planId);
+        const checkIn = todayCheckIns.find(
+          (ci) => ci.planId === slot.planId && ci.scheduledTime === slot.scheduledTime,
+        );
+        return {
+          planName: plan?.name ?? "",
+          scheduledTime: slot.scheduledTime,
+          status: (checkIn?.status ?? "pending") as "completed" | "pending" | "missed",
+        };
+      }),
+    [todaySlots, plans, todayCheckIns],
+  );
+
+  const todayCompleted = useMemo(
+    () => todayEntries.filter((e) => e.status === "completed").length,
+    [todayEntries],
+  );
 
   const getMedicationDosesForPlan = useCallback(
     (planId: string, scheduledTime?: string): MedicationDose[] =>
@@ -266,8 +324,8 @@ function AppShell() {
   );
 
   const nextDoses = useMemo(
-    () => (nextPlan ? getMedicationDosesForPlan(nextPlan.id, nextScheduledTime) : []),
-    [getMedicationDosesForPlan, nextPlan, nextScheduledTime],
+    () => (nextPlan && nextSlot ? getMedicationDosesForPlan(nextPlan.id, nextSlot.scheduledTime) : []),
+    [getMedicationDosesForPlan, nextPlan, nextSlot],
   );
 
 
@@ -311,7 +369,7 @@ function AppShell() {
   }, [goBack, view]);
 
   async function handleExport() {
-    const json = createJsonDumpFromSnapshot({
+    const zipUri = await exportBackupZip({
       checkInMedications,
       checkIns,
       medications,
@@ -322,36 +380,32 @@ function AppShell() {
     });
 
     const date = new Date().toISOString().slice(0, 10);
-    const fileName = `remedero-backup-${date}.json`;
+    const fileName = `remedero-backup-${date}.zip`;
 
     if (Platform.OS === "android") {
       const permissions =
         await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
 
-      if (!permissions.granted) {
-        return;
-      }
+      if (!permissions.granted) return;
 
-      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+      const destUri = await FileSystem.StorageAccessFramework.createFileAsync(
         permissions.directoryUri,
         fileName,
-        "application/json",
+        "application/zip",
       );
 
-      await FileSystem.writeAsStringAsync(fileUri, json, {
-        encoding: FileSystem.EncodingType.UTF8,
+      const zipBase64 = await FileSystem.readAsStringAsync(zipUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      await FileSystem.writeAsStringAsync(destUri, zipBase64, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
       Alert.alert("Backup salvo", `Arquivo salvo como ${fileName}`);
     } else {
-      const tempUri = `${FileSystem.cacheDirectory}${fileName}`;
-
-      await FileSystem.writeAsStringAsync(tempUri, json, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      await Sharing.shareAsync(tempUri, {
-        mimeType: "application/json",
+      await Sharing.shareAsync(zipUri, {
+        mimeType: "application/zip",
         dialogTitle: "Salvar backup Remedero",
       });
     }
@@ -359,29 +413,24 @@ function AppShell() {
 
   async function handleImport() {
     const result = await DocumentPicker.getDocumentAsync({
-      type: "application/json",
+      type: ["application/zip", "application/x-zip-compressed"],
       copyToCacheDirectory: true,
     });
 
-    if (result.canceled || result.assets.length === 0) {
-      return;
-    }
+    if (result.canceled || result.assets.length === 0) return;
 
-    const uri = result.assets[0].uri;
-    const json = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.UTF8,
-    });
+    const restored = await importBackupZip(result.assets[0].uri);
 
-    const dump = parseAndValidateDump(json);
-
-    if (!dump) {
+    if (!restored) {
       Alert.alert("Arquivo invalido", "O arquivo selecionado nao e um backup valido do Remedero.");
       return;
     }
 
+    const { dump, photoCount } = restored;
+
     Alert.alert(
       "Importar backup",
-      "Todos os dados atuais serao substituidos. Esta acao nao pode ser desfeita.",
+      `${dump.data.plans.length} planos, ${dump.data.checkIns.length} check-ins e ${photoCount} fotos encontrados.\n\nTodos os dados atuais serao substituidos.`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -451,26 +500,13 @@ function AppShell() {
   }
 
   function handleAddMedicationToSelectedPlan(input: AddPlanMedicationInput) {
-    if (!selectedPlanId) {
-      return;
-    }
+    if (!selectedPlanId) return;
 
-    const timestamp = Date.now();
-    const medicationId = `medication-${timestamp}`;
-    const planMedicationId = `plan-medication-${timestamp}`;
-
-    const medication = {
-      id: medicationId,
-      name: input.medicationName,
-      dosage: input.dosage,
-      type: input.medicationType,
-      description: input.description || undefined,
-    };
-
+    const planMedicationId = `plan-medication-${Date.now()}`;
     const planMedication = {
       id: planMedicationId,
       planId: selectedPlanId,
-      medicationId,
+      medicationId: input.medicationId,
       quantity: input.quantity,
     };
 
@@ -481,11 +517,9 @@ function AppShell() {
       weekday: schedule.weekday,
     }));
 
-    dbInsertMedication(medication);
     dbInsertPlanMedication(planMedication);
     schedules.forEach(dbInsertPlanMedicationSchedule);
 
-    setMedications((current) => [...current, medication]);
     setPlanMedications((current) => [...current, planMedication]);
     setPlanMedicationSchedules((current) => [...current, ...schedules]);
     setNavigationStack(["home", "plans", "planDetail"]);
@@ -624,38 +658,18 @@ function AppShell() {
   }
 
   function handleEditMedicationInSelectedPlan(input: AddPlanMedicationInput) {
-    if (!selectedPlanMedicationId) {
-      return;
-    }
+    if (!selectedPlanMedicationId) return;
 
     const planMedication = planMedications.find((pm) => pm.id === selectedPlanMedicationId);
+    if (!planMedication) return;
 
-    if (!planMedication) {
-      return;
-    }
-
-    const medication = medications.find((m) => m.id === planMedication.medicationId);
-
-    if (!medication) {
-      return;
-    }
-
-    const updatedMedication = {
-      ...medication,
-      name: input.medicationName,
-      dosage: input.dosage,
-      type: input.medicationType,
-      description: input.description || undefined,
+    const updatedPlanMedication = {
+      ...planMedication,
+      medicationId: input.medicationId,
+      quantity: input.quantity,
     };
 
-    const updatedPlanMedication = { ...planMedication, quantity: input.quantity };
-
-    dbUpdateMedication(updatedMedication);
     dbUpdatePlanMedication(updatedPlanMedication);
-
-    setMedications((current) =>
-      current.map((m) => (m.id === medication.id ? updatedMedication : m)),
-    );
     setPlanMedications((current) =>
       current.map((pm) => (pm.id === selectedPlanMedicationId ? updatedPlanMedication : pm)),
     );
@@ -688,6 +702,71 @@ function AppShell() {
     navigateTo("planDetail");
   }
 
+  function handleAddCatalogMedication(input: CatalogMedicationInput) {
+    const id = `medication-${Date.now()}`;
+    const medication = {
+      id,
+      name: input.name,
+      dosage: input.dosage,
+      type: input.type,
+      description: input.description || undefined,
+    };
+
+    dbInsertMedication(medication);
+    setMedications((current) => [...current, medication]);
+    navigateTo("medicationCatalog");
+  }
+
+  function handleEditCatalogMedication(input: CatalogMedicationInput) {
+    if (!selectedCatalogMedicationId) return;
+
+    setMedications((current) =>
+      current.map((m) => {
+        if (m.id !== selectedCatalogMedicationId) return m;
+        const updated = {
+          ...m,
+          name: input.name,
+          dosage: input.dosage,
+          type: input.type,
+          description: input.description || undefined,
+        };
+        dbUpdateMedication(updated);
+        return updated;
+      }),
+    );
+    setSelectedCatalogMedicationId(null);
+    navigateTo("medicationCatalog");
+  }
+
+  function handleDeleteCatalogMedication(medicationId: string) {
+    const inUseCount = planMedications.filter((pm) => pm.medicationId === medicationId).length;
+
+    if (inUseCount > 0) {
+      Alert.alert(
+        "Remedio em uso",
+        `Este remedio esta vinculado a ${inUseCount} plano${inUseCount > 1 ? "s" : ""}. Remova-o dos planos antes de excluir do catalogo.`,
+      );
+      return;
+    }
+
+    dbDeleteMedication(medicationId);
+    setMedications((current) => current.filter((m) => m.id !== medicationId));
+  }
+
+  function handleQuickLog(input: QuickLogInput) {
+    const log: QuickLog = {
+      id: `quicklog-${Date.now()}`,
+      medicationName: input.medicationName,
+      dosage: input.dosage,
+      takenAt: input.takenAt,
+      notes: input.notes || undefined,
+    };
+
+    dbInsertQuickLog(log);
+    setQuickLogs((current) => [log, ...current]);
+    navigateTo("home");
+  }
+
   if (!isDbReady) {
     return null;
   }
@@ -698,14 +777,18 @@ function AppShell() {
         <CheckInScreen
           doses={nextDoses}
           onCancel={() => navigateTo("home")}
-          onComplete={(photoUri) => {
-            handleCompleteCheckIn(nextPlan.id, nextScheduledTime, photoUri, nextDoses);
+          onComplete={async (photoUri) => {
+            await handleCompleteCheckIn(nextPlan.id, nextScheduledTime, photoUri, nextDoses);
             navigateTo("home");
           }}
           plan={nextPlan}
           scheduledTime={nextScheduledTime}
         />
       );
+    }
+
+    if (view === "quickLog") {
+      return <QuickLogScreen catalogMedications={medications} onCancel={goBack} onSubmit={handleQuickLog} />;
     }
 
     if (view === "createPlan") {
@@ -741,6 +824,7 @@ function AppShell() {
 
       return (
         <AddMedicationScreen
+          catalogMedications={medications}
           onCancel={goBack}
           onSubmit={handleAddMedicationToSelectedPlan}
           plan={selectedPlan}
@@ -762,11 +846,9 @@ function AppShell() {
 
       return (
         <AddMedicationScreen
+          catalogMedications={medications}
           initialValues={{
-            medicationName: planMedSummary.name,
-            dosage: planMedSummary.dosage,
-            medicationType: planMedSummary.type,
-            description: planMedSummary.description ?? "",
+            medicationId: planMedSummary.id,
             quantity: planMedSummary.quantity,
             schedules: planMedSummary.schedules,
           }}
@@ -774,6 +856,49 @@ function AppShell() {
           onCancel={goBack}
           onSubmit={handleEditMedicationInSelectedPlan}
           plan={selectedPlan}
+        />
+      );
+    }
+
+    if (view === "medicationCatalog") {
+      return (
+        <MedicationCatalogScreen
+          medications={medications}
+          onAdd={() => navigateTo("addCatalogMedication")}
+          onBack={goBack}
+          onDelete={handleDeleteCatalogMedication}
+          onEdit={(med) => {
+            setSelectedCatalogMedicationId(med.id);
+            navigateTo("editCatalogMedication");
+          }}
+        />
+      );
+    }
+
+    if (view === "addCatalogMedication") {
+      return (
+        <AddCatalogMedicationScreen
+          onCancel={goBack}
+          onSubmit={handleAddCatalogMedication}
+        />
+      );
+    }
+
+    if (view === "editCatalogMedication") {
+      const med = medications.find((m) => m.id === selectedCatalogMedicationId);
+      if (!med) return null;
+
+      return (
+        <AddCatalogMedicationScreen
+          initialValues={{
+            name: med.name,
+            dosage: med.dosage,
+            type: med.type,
+            description: med.description ?? "",
+          }}
+          mode="edit"
+          onCancel={goBack}
+          onSubmit={handleEditCatalogMedication}
         />
       );
     }
@@ -827,22 +952,19 @@ function AppShell() {
           getDosesForCheckIn={(planId, scheduledTime) =>
             getMedicationDosesForPlan(planId, scheduledTime)
           }
+          onQuickLog={() => navigateTo("quickLog")}
           plans={plans}
+          quickLogs={quickLogs}
         />
       );
     }
 
     if (view === "settings") {
-      return <SettingsScreen onExport={handleExport} onImport={handleImport} />;
-    }
-
-    if (!nextPlan) {
       return (
-        <HomeScreen
-          doses={[]}
-          nextPlan={null}
-          onStartCheckIn={() => navigateTo("plans")}
-          scheduledTime="--:--"
+        <SettingsScreen
+          onExport={handleExport}
+          onImport={handleImport}
+          onOpenCatalog={() => navigateTo("medicationCatalog")}
         />
       );
     }
@@ -851,8 +973,12 @@ function AppShell() {
       <HomeScreen
         doses={nextDoses}
         nextPlan={nextPlan}
-        onStartCheckIn={() => navigateTo("checkin")}
+        onQuickLog={() => navigateTo("quickLog")}
+        onStartCheckIn={() => navigateTo(nextPlan ? "checkin" : "plans")}
         scheduledTime={nextScheduledTime}
+        todayCompleted={todayCompleted}
+        todayEntries={todayEntries}
+        todayTotal={todaySlots.length}
       />
     );
   }
@@ -874,7 +1000,11 @@ function AppShell() {
       view !== "editPlan" &&
       view !== "planDetail" &&
       view !== "addMedication" &&
-      view !== "editMedication" ? (
+      view !== "editMedication" &&
+      view !== "quickLog" &&
+      view !== "medicationCatalog" &&
+      view !== "addCatalogMedication" &&
+      view !== "editCatalogMedication" ? (
         <View style={styles.tabs}>
           {tabs.map((tab) => {
             const isActive = view === tab.key;

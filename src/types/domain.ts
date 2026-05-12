@@ -74,3 +74,11 @@ export type CheckInMedication = {
   dosage: string;
   quantity: number;
 };
+
+export type QuickLog = {
+  id: string;
+  medicationName: string;
+  dosage: string;
+  takenAt: string;
+  notes?: string;
+};

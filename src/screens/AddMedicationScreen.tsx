@@ -14,7 +14,7 @@ import {
 
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { Plan, Weekday } from "@/types/domain";
+import { Medication, Plan, Weekday } from "@/types/domain";
 
 export type MedicationScheduleEntry = {
   weekday: Weekday;
@@ -22,15 +22,13 @@ export type MedicationScheduleEntry = {
 };
 
 export type AddPlanMedicationInput = {
-  medicationName: string;
-  dosage: string;
-  medicationType: string;
-  description: string;
+  medicationId: string;
   quantity: number;
   schedules: MedicationScheduleEntry[];
 };
 
 type AddMedicationScreenProps = {
+  catalogMedications: Medication[];
   initialValues?: AddPlanMedicationInput;
   mode?: "create" | "edit";
   onCancel: () => void;
@@ -56,17 +54,16 @@ function buildInitialWeekdays(schedules: MedicationScheduleEntry[]): Weekday[] {
 
 function buildInitialTimes(schedules: MedicationScheduleEntry[]): Record<Weekday, string[]> {
   const result: Record<Weekday, string[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
-
   schedules.forEach((s) => {
     if (!result[s.weekday].includes(s.scheduledTime)) {
       result[s.weekday].push(s.scheduledTime);
     }
   });
-
   return result;
 }
 
 export function AddMedicationScreen({
+  catalogMedications,
   initialValues,
   mode = "create",
   onCancel,
@@ -75,12 +72,7 @@ export function AddMedicationScreen({
 }: AddMedicationScreenProps) {
   const isEditing = mode === "edit";
 
-  const [medicationName, setMedicationName] = useState(initialValues?.medicationName ?? "");
-  const [dosage, setDosage] = useState(initialValues?.dosage ?? "");
-  const [medicationType, setMedicationType] = useState(
-    initialValues?.medicationType ?? "comprimido",
-  );
-  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [selectedMedicationId, setSelectedMedicationId] = useState(initialValues?.medicationId ?? "");
   const [quantity, setQuantity] = useState(String(initialValues?.quantity ?? 1));
   const [selectedWeekdays, setSelectedWeekdays] = useState<Weekday[]>(
     initialValues ? buildInitialWeekdays(initialValues.schedules) : [],
@@ -119,14 +111,8 @@ export function AddMedicationScreen({
     const timeStr = `${h}:${m}`;
 
     setTimesByWeekday((current) => {
-      if (current[pickerWeekday].includes(timeStr)) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [pickerWeekday]: [...current[pickerWeekday], timeStr].sort(),
-      };
+      if (current[pickerWeekday].includes(timeStr)) return current;
+      return { ...current, [pickerWeekday]: [...current[pickerWeekday], timeStr].sort() };
     });
 
     setShowPicker(false);
@@ -146,8 +132,8 @@ export function AddMedicationScreen({
       timesByWeekday[weekday].map((scheduledTime) => ({ scheduledTime, weekday })),
     );
 
-    if (!medicationName.trim()) {
-      setError("Preencha o nome do remedio.");
+    if (!selectedMedicationId) {
+      setError("Selecione um remedio do catalogo.");
       return;
     }
 
@@ -161,73 +147,67 @@ export function AddMedicationScreen({
       return;
     }
 
-    onSubmit({
-      medicationName: medicationName.trim(),
-      dosage: dosage.trim() || "Sem dosagem",
-      medicationType: medicationType.trim() || "medicamento",
-      description: description.trim(),
-      quantity: parsedQuantity,
-      schedules,
-    });
+    onSubmit({ medicationId: selectedMedicationId, quantity: parsedQuantity, schedules });
   }
+
+  const selectedMedication = catalogMedications.find((m) => m.id === selectedMedicationId);
 
   return (
     <>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.glowOrb} />
 
-        {/* Nav */}
         <View style={styles.topBar}>
           <TouchableOpacity accessibilityRole="button" onPress={onCancel} style={styles.navChip}>
             <Text style={styles.navChipText}>← Cancelar</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Header */}
         <View>
           <Text style={styles.title}>{plan.name}</Text>
           <Text style={styles.subtitle}>
-            {isEditing ? "Altere as informacoes do remedio." : "Adicione o remedio e configure os dias e horarios."}
+            {isEditing
+              ? "Altere o remedio e os horarios."
+              : "Selecione um remedio do catalogo e configure os horarios."}
           </Text>
         </View>
 
-        {/* Campos básicos */}
         <View style={styles.card}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Nome</Text>
-            <TextInput
-              onChangeText={setMedicationName}
-              placeholder="Sertralina"
-              placeholderTextColor={colors.textSubtle}
-              style={styles.input}
-              value={medicationName}
-            />
-          </View>
+          <Text style={styles.cardTitle}>Remedio</Text>
 
-          <View style={styles.row}>
-            <View style={styles.rowField}>
-              <Text style={styles.label}>Dosagem</Text>
-              <TextInput
-                onChangeText={setDosage}
-                placeholder="50mg"
-                placeholderTextColor={colors.textSubtle}
-                style={styles.input}
-                value={dosage}
-              />
+          {catalogMedications.length === 0 ? (
+            <Text style={styles.emptyHint}>
+              Nenhum remedio no catalogo. Adicione em Config → Catalogo.
+            </Text>
+          ) : (
+            <View style={styles.medGrid}>
+              {catalogMedications.map((med) => {
+                const isSelected = selectedMedicationId === med.id;
+                return (
+                  <TouchableOpacity
+                    key={med.id}
+                    accessibilityRole="button"
+                    onPress={() => setSelectedMedicationId(med.id)}
+                    style={[styles.medChip, isSelected && styles.medChipSelected]}
+                  >
+                    <Text style={[styles.medChipName, isSelected && styles.medChipNameSelected]}>
+                      {med.name}
+                    </Text>
+                    <Text style={[styles.medChipMeta, isSelected && styles.medChipMetaSelected]}>
+                      {med.dosage} · {med.type}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          )}
 
-            <View style={styles.rowField}>
-              <Text style={styles.label}>Tipo</Text>
-              <TextInput
-                onChangeText={setMedicationType}
-                placeholder="comprimido"
-                placeholderTextColor={colors.textSubtle}
-                style={styles.input}
-                value={medicationType}
-              />
-            </View>
-          </View>
+          {selectedMedication?.description ? (
+            <Text style={styles.selectedDesc}>{selectedMedication.description}</Text>
+          ) : null}
+        </View>
 
+        <View style={styles.card}>
           <View style={styles.field}>
             <Text style={styles.label}>Quantidade</Text>
             <TextInput
@@ -239,29 +219,14 @@ export function AddMedicationScreen({
               value={quantity}
             />
           </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Descricao</Text>
-            <TextInput
-              multiline
-              onChangeText={setDescription}
-              placeholder="Observacoes, instrucoes de uso..."
-              placeholderTextColor={colors.textSubtle}
-              style={[styles.input, styles.inputMultiline]}
-              textAlignVertical="top"
-              value={description}
-            />
-          </View>
         </View>
 
-        {/* Dias e horários */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Dias e horarios</Text>
 
           <View style={styles.weekdayRow}>
             {weekdayOptions.map((wd) => {
               const isSelected = selectedWeekdays.includes(wd.value);
-
               return (
                 <Pressable
                   key={wd.value}
@@ -322,7 +287,6 @@ export function AddMedicationScreen({
         />
       </ScrollView>
 
-      {/* Time picker modal */}
       <Modal animationType="slide" transparent visible={showPicker}>
         <View style={styles.pickerOverlay}>
           <View style={styles.pickerSheet}>
@@ -337,22 +301,15 @@ export function AddMedicationScreen({
               onChange={(event, date) => {
                 if (date) setPickerTime(date);
                 if (Platform.OS === "android") {
-                  if (event.type === "set") {
-                    confirmTime(date);
-                  } else {
-                    setShowPicker(false);
-                  }
+                  if (event.type === "set") confirmTime(date);
+                  else setShowPicker(false);
                 }
               }}
               style={styles.picker}
               value={pickerTime}
             />
             <View style={styles.pickerActions}>
-              <PrimaryButton
-                label="Cancelar"
-                onPress={() => setShowPicker(false)}
-                variant="secondary"
-              />
+              <PrimaryButton label="Cancelar" onPress={() => setShowPicker(false)} variant="secondary" />
               <PrimaryButton label="Adicionar" onPress={confirmTime} />
             </View>
           </View>
@@ -436,13 +393,44 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     ...typography.bodyMd,
   },
-  inputMultiline: {
-    minHeight: 88,
-  },
   label: {
     color: colors.textMuted,
     ...typography.labelSm,
     textTransform: "uppercase",
+  },
+  medChip: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexBasis: "48%",
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  medChipMeta: {
+    color: colors.textSubtle,
+    ...typography.labelSm,
+  },
+  medChipMetaSelected: {
+    color: colors.primaryText,
+    opacity: 0.8,
+  },
+  medChipName: {
+    color: colors.text,
+    ...typography.labelMd,
+    fontWeight: "700",
+  },
+  medChipNameSelected: {
+    color: colors.primaryText,
+  },
+  medChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  medGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   navChip: {
     alignSelf: "flex-start",
@@ -490,13 +478,12 @@ const styles = StyleSheet.create({
     ...typography.headlineSm,
     textAlign: "center",
   },
-  row: {
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  rowField: {
-    flex: 1,
-    gap: spacing.xs,
+  selectedDesc: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    color: colors.textSubtle,
+    ...typography.labelSm,
+    paddingTop: spacing.sm,
   },
   subtitle: {
     color: colors.textSubtle,

@@ -8,6 +8,7 @@ import {
   PlanMedication,
   PlanMedicationSchedule,
   PlanNote,
+  QuickLog,
   Weekday,
 } from "@/types/domain";
 
@@ -70,6 +71,14 @@ export function initializeDatabase() {
       created_at TEXT NOT NULL,
       feeling TEXT NOT NULL,
       text TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS quick_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      medication_name TEXT NOT NULL,
+      dosage TEXT NOT NULL,
+      taken_at TEXT NOT NULL,
+      notes TEXT
     );
   `);
 }
@@ -165,6 +174,10 @@ export function dbInsertPlanMedication(pm: PlanMedication): void {
   );
 }
 
+export function dbDeleteMedication(medicationId: string): void {
+  database.runSync("DELETE FROM medications WHERE id = ?", medicationId);
+}
+
 export function dbUpdateMedication(medication: Medication): void {
   database.runSync(
     "UPDATE medications SET name = ?, dosage = ?, type = ?, notes = ? WHERE id = ?",
@@ -178,7 +191,8 @@ export function dbUpdateMedication(medication: Medication): void {
 
 export function dbUpdatePlanMedication(pm: PlanMedication): void {
   database.runSync(
-    "UPDATE plan_medications SET quantity = ? WHERE id = ?",
+    "UPDATE plan_medications SET medication_id = ?, quantity = ? WHERE id = ?",
+    pm.medicationId,
     pm.quantity,
     pm.id,
   );
@@ -356,6 +370,37 @@ export function dbDeletePlanNotesByPlanId(planId: string): void {
   database.runSync("DELETE FROM plan_notes WHERE plan_id = ?", planId);
 }
 
+// QuickLogs
+
+export function dbGetQuickLogs(): QuickLog[] {
+  return database
+    .getAllSync<{
+      id: string;
+      medication_name: string;
+      dosage: string;
+      taken_at: string;
+      notes: string | null;
+    }>("SELECT * FROM quick_logs ORDER BY taken_at DESC")
+    .map((row) => ({
+      id: row.id,
+      medicationName: row.medication_name,
+      dosage: row.dosage,
+      takenAt: row.taken_at,
+      notes: row.notes ?? undefined,
+    }));
+}
+
+export function dbInsertQuickLog(log: QuickLog): void {
+  database.runSync(
+    "INSERT INTO quick_logs (id, medication_name, dosage, taken_at, notes) VALUES (?, ?, ?, ?, ?)",
+    log.id,
+    log.medicationName,
+    log.dosage,
+    log.takenAt,
+    log.notes ?? null,
+  );
+}
+
 export function dbClearAllTables(): void {
   database.execSync(`
     DELETE FROM check_in_medications;
@@ -365,5 +410,6 @@ export function dbClearAllTables(): void {
     DELETE FROM plan_notes;
     DELETE FROM medications;
     DELETE FROM plans;
+    DELETE FROM quick_logs;
   `);
 }

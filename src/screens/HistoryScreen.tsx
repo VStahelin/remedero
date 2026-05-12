@@ -1,12 +1,15 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, MedicationDose, Plan } from "@/types/domain";
+import { CheckIn, MedicationDose, Plan, QuickLog } from "@/types/domain";
 
 type HistoryScreenProps = {
   checkIns: CheckIn[];
   getDosesForCheckIn: (planId: string, scheduledTime: string) => MedicationDose[];
+  onQuickLog: () => void;
   plans: Plan[];
+  quickLogs: QuickLog[];
 };
 
 type DayStatus = "completed" | "missed" | "none" | "partial";
@@ -89,19 +92,40 @@ function getStatusLabel(checkIn: CheckIn): string {
   return "Aguardando check-in";
 }
 
-export function HistoryScreen({ checkIns, getDosesForCheckIn, plans }: HistoryScreenProps) {
+export function HistoryScreen({ checkIns, getDosesForCheckIn, onQuickLog, plans, quickLogs }: HistoryScreenProps) {
   const today = new Date();
   const todayKey = formatDate(today);
   const todayCheckIns = checkIns.filter((checkIn) => checkIn.date === todayKey);
-  const calendarDays = getCalendarDays(today);
-  const monthLabel = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
+
+  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState<string | null>(todayKey);
+
+  function toggleSelectedDate(date: string) {
+    setSelectedDate((current) => (current === date ? null : date));
+  }
+
+  function prevMonth() {
+    setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  }
+
+  function nextMonth() {
+    setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  }
+
+  const calendarDays = getCalendarDays(viewDate);
+  const monthLabel = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View>
-        <Text style={styles.eyebrow}>Historico</Text>
-        <Text style={styles.title}>Hoje</Text>
-        <Text style={styles.subtitle}>Tiles de hoje e consistencia do mes atual.</Text>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.eyebrow}>Historico</Text>
+          <Text style={styles.title}>Hoje</Text>
+          <Text style={styles.subtitle}>Tiles de hoje e consistencia do mes.</Text>
+        </View>
+        <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.quickLogChip}>
+          <Text style={styles.quickLogChipText}>+ Avulso</Text>
+        </TouchableOpacity>
       </View>
 
       {todayCheckIns.map((checkIn) => {
@@ -134,7 +158,15 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, plans }: HistorySc
       <View style={styles.calendarCard}>
         <View style={styles.calendarHeader}>
           <Text style={styles.sectionTitle}>Calendario</Text>
-          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <View style={styles.monthNav}>
+            <TouchableOpacity accessibilityRole="button" onPress={prevMonth} style={styles.monthNavBtn}>
+              <Text style={styles.monthNavText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.monthLabel}>{monthLabel}</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={nextMonth} style={styles.monthNavBtn}>
+              <Text style={styles.monthNavText}>›</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.weekHeader}>
@@ -151,14 +183,34 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, plans }: HistorySc
               return <View key={`empty-${index}`} style={styles.dayCell} />;
             }
 
-            const date = formatDate(new Date(today.getFullYear(), today.getMonth(), day));
+            const date = formatDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), day));
             const status = getDayStatus(checkIns, date);
             const isToday = date === todayKey;
 
+            const isSelected = date === selectedDate;
+
             return (
-              <View key={date} style={styles.dayCell}>
-                <View style={[styles.dayNumberWrap, isToday && styles.todayWrap]}>
-                  <Text style={[styles.dayNumber, isToday && styles.todayText]}>{day}</Text>
+              <TouchableOpacity
+                key={date}
+                accessibilityRole="button"
+                onPress={() => toggleSelectedDate(date)}
+                style={styles.dayCell}
+              >
+                <View
+                  style={[
+                    styles.dayNumberWrap,
+                    isToday && styles.todayWrap,
+                    isSelected && !isToday && styles.selectedWrap,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayNumber,
+                      (isToday || isSelected) && styles.todayText,
+                    ]}
+                  >
+                    {day}
+                  </Text>
                 </View>
                 {status !== "none" ? (
                   <View
@@ -172,10 +224,68 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, plans }: HistorySc
                     ]}
                   />
                 ) : null}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
+
+        {selectedDate && (() => {
+          const dayCheckIns = checkIns.filter((ci) => ci.date === selectedDate);
+          const dayQuickLogs = quickLogs.filter((ql) => ql.takenAt.startsWith(selectedDate));
+          const [y, m, d] = selectedDate.split("-").map(Number);
+          const label = `${d} de ${monthNames[m - 1]} ${y}`;
+
+          return (
+            <View style={styles.dayDetail}>
+              <Text style={styles.dayDetailTitle}>{label}</Text>
+              {dayCheckIns.length === 0 && dayQuickLogs.length === 0 ? (
+                <Text style={styles.dayDetailEmpty}>Nenhum registro neste dia.</Text>
+              ) : (
+                dayCheckIns.map((ci) => {
+                  const plan = plans.find((p) => p.id === ci.planId);
+                  const doses = getDosesForCheckIn(ci.planId, ci.scheduledTime);
+                  const isCompleted = ci.status === "completed";
+                  const isMissed = ci.status === "missed";
+
+                  return (
+                    <View key={ci.id} style={styles.dayDetailRow}>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          isCompleted ? styles.success : isMissed ? styles.danger : styles.pending,
+                        ]}
+                      />
+                      <View style={styles.rowContent}>
+                        <Text style={styles.rowTitle}>
+                          {ci.scheduledTime} · {plan?.name ?? "Plano"}
+                        </Text>
+                        <Text style={styles.rowMeta}>{getStatusLabel(ci)}</Text>
+                        {doses.length > 0 && (
+                          <Text numberOfLines={1} style={styles.doseMeta}>
+                            {doses.map((dose) => `${dose.name} ${dose.quantity}x`).join(", ")}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+              {dayQuickLogs.map((ql) => {
+                const time = formatCompletedAt(ql.takenAt);
+                return (
+                  <View key={ql.id} style={styles.dayDetailRow}>
+                    <View style={[styles.statusDot, styles.quickLogDot]} />
+                    <View style={styles.rowContent}>
+                      <Text style={styles.rowTitle}>{time} · {ql.medicationName}</Text>
+                      <Text style={styles.rowMeta}>{ql.dosage} · Avulso</Text>
+                      {ql.notes ? <Text style={styles.doseMeta}>{ql.notes}</Text> : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         <View style={styles.legend}>
           <View style={styles.legendItem}>
@@ -266,6 +376,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
+  headerRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  quickLogChip: {
+    backgroundColor: colors.glass,
+    borderColor: colors.primary,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  quickLogChipText: {
+    color: colors.primarySoft,
+    ...typography.labelSm,
+  },
+  quickLogDot: {
+    backgroundColor: colors.secondary,
+    marginTop: 4,
+  },
   legend: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -291,9 +423,23 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
   },
   monthLabel: {
-    color: colors.textSubtle,
+    color: colors.text,
     ...typography.labelMd,
     textTransform: "capitalize",
+  },
+  monthNav: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  monthNavBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  monthNavText: {
+    color: colors.primary,
+    fontSize: 22,
+    lineHeight: 24,
   },
   partial: {
     backgroundColor: colors.warning,
@@ -348,6 +494,33 @@ const styles = StyleSheet.create({
   todayText: {
     color: colors.primaryText,
     fontWeight: "700",
+  },
+  dayDetail: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+  },
+  dayDetailEmpty: {
+    color: colors.textSubtle,
+    ...typography.bodyMd,
+  },
+  dayDetailRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  dayDetailTitle: {
+    color: colors.text,
+    ...typography.labelMd,
+    textTransform: "capitalize",
+  },
+  selectedWrap: {
+    backgroundColor: colors.surfaceBright,
+    borderColor: colors.primary,
+    borderWidth: 1,
   },
   todayWrap: {
     backgroundColor: colors.primary,

@@ -1,81 +1,144 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { MetricCard } from "@/components/MetricCard";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { colors, radius, spacing, typography } from "@/theme/theme";
 import { MedicationDose, Plan } from "@/types/domain";
 
-type HomeScreenProps = {
-  nextPlan: Plan | null;
-  doses: MedicationDose[];
-  onStartCheckIn: () => void;
+type TodayEntry = {
+  planName: string;
   scheduledTime: string;
+  status: "completed" | "pending" | "missed";
 };
 
-export function HomeScreen({ nextPlan, doses, onStartCheckIn, scheduledTime }: HomeScreenProps) {
+type HomeScreenProps = {
+  doses: MedicationDose[];
+  nextPlan: Plan | null;
+  onQuickLog: () => void;
+  onStartCheckIn: () => void;
+  scheduledTime: string;
+  todayCompleted: number;
+  todayEntries: TodayEntry[];
+  todayTotal: number;
+};
+
+export function HomeScreen({
+  doses,
+  nextPlan,
+  onQuickLog,
+  onStartCheckIn,
+  scheduledTime,
+  todayCompleted,
+  todayEntries,
+  todayTotal,
+}: HomeScreenProps) {
+  const allDoneToday = todayTotal > 0 && todayCompleted === todayTotal;
+  const hasPlans = todayTotal > 0 || nextPlan !== null;
+
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.glowOrb} />
       <View>
-        <Text style={styles.eyebrow}>Proximo check-in</Text>
+        <Text style={styles.eyebrow}>
+          {allDoneToday ? "Dia concluido" : "Proximo check-in"}
+        </Text>
         <Text style={styles.title}>
-          {nextPlan ? `Hoje, ${scheduledTime}` : "Sem planos ativos"}
+          {!hasPlans
+            ? "Sem planos"
+            : allDoneToday
+              ? "Tudo feito!"
+              : scheduledTime}
         </Text>
         <Text style={styles.subtitle}>
-          {nextPlan
-            ? "Um ritual rapido para manter sua sequencia."
-            : "Crie um plano de tratamento para comecar."}
+          {!hasPlans
+            ? "Crie um plano de tratamento para comecar."
+            : allDoneToday
+              ? "Todos os check-ins do dia foram concluidos."
+              : "Um ritual rapido para manter sua sequencia."}
         </Text>
       </View>
 
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
           <View>
-            <Text style={styles.planName}>{nextPlan ? nextPlan.name : "Nenhum plano"}</Text>
-            <Text style={styles.planTime}>{nextPlan ? scheduledTime : "--:--"}</Text>
+            <Text style={styles.planName}>
+              {nextPlan ? nextPlan.name : allDoneToday ? "Ate amanha!" : "Nenhum plano"}
+            </Text>
+            <Text style={styles.planTime}>
+              {allDoneToday ? "✓" : nextPlan ? scheduledTime : "--:--"}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.doseList}>
-          {doses.map((dose) => (
-            <View key={dose.id} style={styles.dosePill}>
-              <View style={styles.doseDot} />
-              <Text style={styles.dose}>
-                {dose.name} - {dose.quantity} {dose.type}
+        {doses.length > 0 && (
+          <View style={styles.doseList}>
+            {doses.map((dose) => (
+              <View key={dose.id} style={styles.dosePill}>
+                <View style={styles.doseDot} />
+                <Text style={styles.dose}>
+                  {dose.name} - {dose.quantity} {dose.type}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <PrimaryButton
+          label={!hasPlans ? "Criar plano" : allDoneToday ? "Ver planos" : "Fazer check-in"}
+          onPress={onStartCheckIn}
+        />
+        <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.quickLogBtn}>
+          <Text style={styles.quickLogText}>+ Registrar remedio avulso</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.metrics}>
+        <MetricCard
+          label="Concluidos hoje"
+          value={todayTotal === 0 ? "--" : `${todayCompleted}/${todayTotal}`}
+        />
+        <MetricCard
+          label="Agendados hoje"
+          value={String(todayTotal === 0 ? "--" : todayTotal)}
+        />
+      </View>
+
+      {todayEntries.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Check-ins de hoje</Text>
+          {todayEntries.map((entry, i) => (
+            <View key={`${entry.planName}-${entry.scheduledTime}-${i}`} style={styles.historyItem}>
+              <View>
+                <Text style={entry.status === "completed" ? styles.historyLine : styles.historyLineMuted}>
+                  {entry.scheduledTime} · {entry.planName}
+                </Text>
+              </View>
+              <Text
+                style={
+                  entry.status === "completed"
+                    ? styles.historyStatus
+                    : entry.status === "missed"
+                      ? styles.historyStatusDanger
+                      : styles.historyStatusMuted
+                }
+              >
+                {entry.status === "completed"
+                  ? "Completo"
+                  : entry.status === "missed"
+                    ? "Perdido"
+                    : "Pendente"}
               </Text>
             </View>
           ))}
         </View>
-
-        <PrimaryButton
-          label={nextPlan ? "Fazer check-in" : "Criar plano"}
-          onPress={onStartCheckIn}
-        />
-      </View>
-
-      <View style={styles.metrics}>
-        <MetricCard label="Concluidos hoje" value="1/3" />
-        <MetricCard label="Sequencia atual" value="4 dias" />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Ultimos check-ins</Text>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyLine}>08:00 - concluido com foto</Text>
-          <Text style={styles.historyStatus}>Completo</Text>
-        </View>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyLineMuted}>14:00 - aguardando</Text>
-          <Text style={styles.historyStatusMuted}>Pendente</Text>
-        </View>
-      </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    gap: spacing.xl,
+    gap: spacing.md,
     overflow: "hidden",
     padding: spacing.lg,
     paddingBottom: spacing.xl,
@@ -158,6 +221,11 @@ const styles = StyleSheet.create({
     ...typography.labelSm,
     textTransform: "uppercase",
   },
+  historyStatusDanger: {
+    color: colors.danger,
+    ...typography.labelSm,
+    textTransform: "uppercase",
+  },
   historyStatusMuted: {
     color: colors.textSubtle,
     ...typography.labelSm,
@@ -170,6 +238,15 @@ const styles = StyleSheet.create({
   planName: {
     color: colors.textMuted,
     ...typography.headlineSm,
+  },
+  quickLogBtn: {
+    alignItems: "center",
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  quickLogText: {
+    color: colors.primarySoft,
+    ...typography.labelMd,
   },
   planTime: {
     color: colors.text,
