@@ -141,5 +141,6 @@ release-check-clean:
 	@! gh release view "$(RELEASE_TAG)" >/dev/null 2>&1 || (echo "GitHub Release $(RELEASE_TAG) already exists."; exit 1)
 
 create-release: release-check-clean validate release-apk
-	gh release create "$(RELEASE_TAG)" "$(RELEASE_APK)" --target "$$(git rev-parse HEAD)" --title "Remedero $(RELEASE_TAG)" --notes "APK privado do Remedero $(RELEASE_TAG)."
+	git push origin main
+	gh release create "$(RELEASE_TAG)" "$(RELEASE_APK)" --title "Remedero $(RELEASE_TAG)" --notes "APK privado do Remedero $(RELEASE_TAG)."
 	@printf "GitHub Release created: $(RELEASE_TAG)\n"
