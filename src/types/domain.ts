@@ -82,3 +82,11 @@ export type QuickLog = {
   takenAt: string;
   notes?: string;
 };
+
+export type MoodLog = {
+  id: string;
+  createdAt: string;
+  feeling: Feeling;
+  text?: string;
+  planId?: string;
+};

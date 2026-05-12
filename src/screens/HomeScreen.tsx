@@ -14,6 +14,7 @@ type TodayEntry = {
 type HomeScreenProps = {
   doses: MedicationDose[];
   nextPlan: Plan | null;
+  onAddMood: () => void;
   onQuickLog: () => void;
   onStartCheckIn: () => void;
   scheduledTime: string;
@@ -25,6 +26,7 @@ type HomeScreenProps = {
 export function HomeScreen({
   doses,
   nextPlan,
+  onAddMood,
   onQuickLog,
   onStartCheckIn,
   scheduledTime,
@@ -87,9 +89,14 @@ export function HomeScreen({
           label={!hasPlans ? "Criar plano" : allDoneToday ? "Ver planos" : "Fazer check-in"}
           onPress={onStartCheckIn}
         />
-        <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.quickLogBtn}>
-          <Text style={styles.quickLogText}>+ Registrar remedio avulso</Text>
-        </TouchableOpacity>
+        <View style={styles.secondaryActions}>
+          <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.secondaryBtn}>
+            <Text style={styles.secondaryBtnText}>+ Remedio avulso</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={onAddMood} style={styles.secondaryBtn}>
+            <Text style={styles.secondaryBtnText}>+ Sentimento</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.metrics}>
@@ -239,12 +246,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.headlineSm,
   },
-  quickLogBtn: {
-    alignItems: "center",
+  secondaryActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "center",
     marginTop: spacing.sm,
+  },
+  secondaryBtn: {
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  quickLogText: {
+  secondaryBtnText: {
     color: colors.primarySoft,
     ...typography.labelMd,
   },

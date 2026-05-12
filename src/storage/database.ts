@@ -4,6 +4,7 @@ import {
   CheckIn,
   CheckInMedication,
   Medication,
+  MoodLog,
   Plan,
   PlanMedication,
   PlanMedicationSchedule,
@@ -79,6 +80,14 @@ export function initializeDatabase() {
       dosage TEXT NOT NULL,
       taken_at TEXT NOT NULL,
       notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS mood_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      created_at TEXT NOT NULL,
+      feeling TEXT NOT NULL,
+      text TEXT,
+      plan_id TEXT
     );
   `);
 }
@@ -401,6 +410,37 @@ export function dbInsertQuickLog(log: QuickLog): void {
   );
 }
 
+// MoodLogs
+
+export function dbGetMoodLogs(): MoodLog[] {
+  return database
+    .getAllSync<{
+      id: string;
+      created_at: string;
+      feeling: string;
+      text: string | null;
+      plan_id: string | null;
+    }>("SELECT * FROM mood_logs ORDER BY created_at DESC")
+    .map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      feeling: row.feeling as MoodLog["feeling"],
+      text: row.text ?? undefined,
+      planId: row.plan_id ?? undefined,
+    }));
+}
+
+export function dbInsertMoodLog(log: MoodLog): void {
+  database.runSync(
+    "INSERT INTO mood_logs (id, created_at, feeling, text, plan_id) VALUES (?, ?, ?, ?, ?)",
+    log.id,
+    log.createdAt,
+    log.feeling,
+    log.text ?? null,
+    log.planId ?? null,
+  );
+}
+
 export function dbClearAllTables(): void {
   database.execSync(`
     DELETE FROM check_in_medications;
@@ -411,5 +451,6 @@ export function dbClearAllTables(): void {
     DELETE FROM medications;
     DELETE FROM plans;
     DELETE FROM quick_logs;
+    DELETE FROM mood_logs;
   `);
 }

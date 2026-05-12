@@ -25,6 +25,7 @@ import {
   AddCatalogMedicationScreen,
   CatalogMedicationInput,
 } from "@/screens/AddCatalogMedicationScreen";
+import { AddMoodScreen, MoodLogInput } from "@/screens/AddMoodScreen";
 import { MedicationCatalogScreen } from "@/screens/MedicationCatalogScreen";
 import { QuickLogInput, QuickLogScreen } from "@/screens/QuickLogScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
@@ -37,7 +38,9 @@ import {
   dbDeletePlanNotesByPlanId,
   dbClearAllTables,
   dbDeletePlan,
+  dbGetMoodLogs,
   dbGetQuickLogs,
+  dbInsertMoodLog,
   dbInsertQuickLog,
   dbGetCheckInMedications,
   dbGetCheckIns,
@@ -60,7 +63,7 @@ import {
   initializeDatabase,
 } from "@/storage/database";
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, CheckInMedication, MedicationDose, QuickLog, Weekday } from "@/types/domain";
+import { CheckIn, CheckInMedication, MedicationDose, MoodLog, QuickLog, Weekday } from "@/types/domain";
 
 type MainTab = "home" | "plans" | "history" | "settings";
 type AppView =
@@ -74,7 +77,8 @@ type AppView =
   | "quickLog"
   | "medicationCatalog"
   | "addCatalogMedication"
-  | "editCatalogMedication";
+  | "editCatalogMedication"
+  | "addMood";
 
 const tabs: Array<{ key: MainTab; label: string }> = [
   { key: "home", label: "Home" },
@@ -114,6 +118,7 @@ function AppShell() {
   >([]);
   const [planNotes, setPlanNotes] = useState<ReturnType<typeof dbGetPlanNotes>>([]);
   const [quickLogs, setQuickLogs] = useState<ReturnType<typeof dbGetQuickLogs>>([]);
+  const [moodLogs, setMoodLogs] = useState<ReturnType<typeof dbGetMoodLogs>>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedPlanMedicationId, setSelectedPlanMedicationId] = useState<string | null>(null);
   const [selectedCatalogMedicationId, setSelectedCatalogMedicationId] = useState<string | null>(null);
@@ -131,6 +136,7 @@ function AppShell() {
     setCheckInMedications(dbGetCheckInMedications());
     setPlanNotes(dbGetPlanNotes());
     setQuickLogs(dbGetQuickLogs());
+    setMoodLogs(dbGetMoodLogs());
 
     setIsDbReady(true);
   }, []);
@@ -463,6 +469,21 @@ function AppShell() {
     );
   }
 
+  function handleClearData() {
+    dbClearAllTables();
+    setPlans([]);
+    setMedications([]);
+    setPlanMedications([]);
+    setPlanMedicationSchedules([]);
+    setCheckIns([]);
+    setCheckInMedications([]);
+    setPlanNotes([]);
+    setQuickLogs([]);
+    setMoodLogs([]);
+    setSelectedPlanId(null);
+    setNavigationStack(["home"]);
+  }
+
   function handleCreatePlan(input: CreatePlanInput) {
     const timestamp = Date.now();
     const planId = `plan-${timestamp}`;
@@ -753,6 +774,20 @@ function AppShell() {
     setMedications((current) => current.filter((m) => m.id !== medicationId));
   }
 
+  function handleAddMood(input: MoodLogInput) {
+    const log: MoodLog = {
+      id: `mood-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      feeling: input.feeling,
+      text: input.text || undefined,
+      planId: input.planId ?? undefined,
+    };
+
+    dbInsertMoodLog(log);
+    setMoodLogs((current) => [log, ...current]);
+    goBack();
+  }
+
   function handleQuickLog(input: QuickLogInput) {
     const log: QuickLog = {
       id: `quicklog-${Date.now()}`,
@@ -789,6 +824,10 @@ function AppShell() {
 
     if (view === "quickLog") {
       return <QuickLogScreen catalogMedications={medications} onCancel={goBack} onSubmit={handleQuickLog} />;
+    }
+
+    if (view === "addMood") {
+      return <AddMoodScreen onCancel={goBack} onSubmit={handleAddMood} plans={plans} />;
     }
 
     if (view === "createPlan") {
@@ -952,6 +991,8 @@ function AppShell() {
           getDosesForCheckIn={(planId, scheduledTime) =>
             getMedicationDosesForPlan(planId, scheduledTime)
           }
+          moodLogs={moodLogs}
+          onAddMood={() => navigateTo("addMood")}
           onQuickLog={() => navigateTo("quickLog")}
           plans={plans}
           quickLogs={quickLogs}
@@ -962,6 +1003,7 @@ function AppShell() {
     if (view === "settings") {
       return (
         <SettingsScreen
+          onClearData={handleClearData}
           onExport={handleExport}
           onImport={handleImport}
           onOpenCatalog={() => navigateTo("medicationCatalog")}
@@ -973,6 +1015,7 @@ function AppShell() {
       <HomeScreen
         doses={nextDoses}
         nextPlan={nextPlan}
+        onAddMood={() => navigateTo("addMood")}
         onQuickLog={() => navigateTo("quickLog")}
         onStartCheckIn={() => navigateTo(nextPlan ? "checkin" : "plans")}
         scheduledTime={nextScheduledTime}
@@ -1004,7 +1047,8 @@ function AppShell() {
       view !== "quickLog" &&
       view !== "medicationCatalog" &&
       view !== "addCatalogMedication" &&
-      view !== "editCatalogMedication" ? (
+      view !== "editCatalogMedication" &&
+      view !== "addMood" ? (
         <View style={styles.tabs}>
           {tabs.map((tab) => {
             const isActive = view === tab.key;

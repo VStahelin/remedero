@@ -2,11 +2,13 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { colors, radius, spacing, typography } from "@/theme/theme";
-import { CheckIn, MedicationDose, Plan, QuickLog } from "@/types/domain";
+import { CheckIn, MedicationDose, MoodLog, Plan, QuickLog } from "@/types/domain";
 
 type HistoryScreenProps = {
   checkIns: CheckIn[];
   getDosesForCheckIn: (planId: string, scheduledTime: string) => MedicationDose[];
+  moodLogs: MoodLog[];
+  onAddMood: () => void;
   onQuickLog: () => void;
   plans: Plan[];
   quickLogs: QuickLog[];
@@ -92,7 +94,15 @@ function getStatusLabel(checkIn: CheckIn): string {
   return "Aguardando check-in";
 }
 
-export function HistoryScreen({ checkIns, getDosesForCheckIn, onQuickLog, plans, quickLogs }: HistoryScreenProps) {
+function extractTime(isoOrTime: string): string {
+  if (isoOrTime.includes("T")) {
+    const d = new Date(isoOrTime);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  return isoOrTime;
+}
+
+export function HistoryScreen({ checkIns, getDosesForCheckIn, moodLogs, onAddMood, onQuickLog, plans, quickLogs }: HistoryScreenProps) {
   const today = new Date();
   const todayKey = formatDate(today);
   const todayCheckIns = checkIns.filter((checkIn) => checkIn.date === todayKey);
@@ -117,15 +127,18 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, onQuickLog, plans,
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.eyebrow}>Historico</Text>
-          <Text style={styles.title}>Hoje</Text>
-          <Text style={styles.subtitle}>Tiles de hoje e consistencia do mes.</Text>
+      <View>
+        <Text style={styles.eyebrow}>Historico</Text>
+        <Text style={styles.title}>Hoje</Text>
+        <Text style={styles.subtitle}>Tiles de hoje e consistencia do mes.</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.actionChip}>
+            <Text style={styles.actionChipText}>+ Avulso</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={onAddMood} style={styles.actionChip}>
+            <Text style={styles.actionChipText}>+ Sentimento</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity accessibilityRole="button" onPress={onQuickLog} style={styles.quickLogChip}>
-          <Text style={styles.quickLogChipText}>+ Avulso</Text>
-        </TouchableOpacity>
       </View>
 
       {todayCheckIns.map((checkIn) => {
@@ -232,57 +245,90 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, onQuickLog, plans,
         {selectedDate && (() => {
           const dayCheckIns = checkIns.filter((ci) => ci.date === selectedDate);
           const dayQuickLogs = quickLogs.filter((ql) => ql.takenAt.startsWith(selectedDate));
+          const dayMoodLogs = moodLogs.filter((ml) => ml.createdAt.startsWith(selectedDate));
           const [y, m, d] = selectedDate.split("-").map(Number);
           const label = `${d} de ${monthNames[m - 1]} ${y}`;
+
+          type TimelineItem =
+            | { kind: "checkin"; time: string; data: CheckIn }
+            | { kind: "quicklog"; time: string; data: QuickLog }
+            | { kind: "mood"; time: string; data: MoodLog };
+
+          const timeline: TimelineItem[] = [
+            ...dayCheckIns.map((ci) => ({
+              kind: "checkin" as const,
+              time: ci.completedAt ? extractTime(ci.completedAt) : ci.scheduledTime,
+              data: ci,
+            })),
+            ...dayQuickLogs.map((ql) => ({
+              kind: "quicklog" as const,
+              time: extractTime(ql.takenAt),
+              data: ql,
+            })),
+            ...dayMoodLogs.map((ml) => ({
+              kind: "mood" as const,
+              time: extractTime(ml.createdAt),
+              data: ml,
+            })),
+          ].sort((a, b) => a.time.localeCompare(b.time));
 
           return (
             <View style={styles.dayDetail}>
               <Text style={styles.dayDetailTitle}>{label}</Text>
-              {dayCheckIns.length === 0 && dayQuickLogs.length === 0 ? (
+              {timeline.length === 0 ? (
                 <Text style={styles.dayDetailEmpty}>Nenhum registro neste dia.</Text>
               ) : (
-                dayCheckIns.map((ci) => {
-                  const plan = plans.find((p) => p.id === ci.planId);
-                  const doses = getDosesForCheckIn(ci.planId, ci.scheduledTime);
-                  const isCompleted = ci.status === "completed";
-                  const isMissed = ci.status === "missed";
+                timeline.map((item) => {
+                  if (item.kind === "checkin") {
+                    const ci = item.data;
+                    const plan = plans.find((p) => p.id === ci.planId);
+                    const doses = getDosesForCheckIn(ci.planId, ci.scheduledTime);
+                    const isCompleted = ci.status === "completed";
+                    const isMissed = ci.status === "missed";
+                    return (
+                      <View key={ci.id} style={styles.dayDetailRow}>
+                        <View style={[styles.statusDot, isCompleted ? styles.success : isMissed ? styles.danger : styles.pending]} />
+                        <View style={styles.rowContent}>
+                          <Text style={styles.rowTitle}>{item.time} · {plan?.name ?? "Plano"}</Text>
+                          <Text style={styles.rowMeta}>{getStatusLabel(ci)}</Text>
+                          {doses.length > 0 && (
+                            <Text numberOfLines={1} style={styles.doseMeta}>
+                              {doses.map((dose) => `${dose.name} ${dose.quantity}x`).join(", ")}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  }
 
+                  if (item.kind === "quicklog") {
+                    const ql = item.data;
+                    return (
+                      <View key={ql.id} style={styles.dayDetailRow}>
+                        <View style={[styles.statusDot, styles.quickLogDot]} />
+                        <View style={styles.rowContent}>
+                          <Text style={styles.rowTitle}>{item.time} · {ql.medicationName}</Text>
+                          <Text style={styles.rowMeta}>{ql.dosage} · Avulso</Text>
+                          {ql.notes ? <Text style={styles.doseMeta}>{ql.notes}</Text> : null}
+                        </View>
+                      </View>
+                    );
+                  }
+
+                  const ml = item.data;
+                  const linkedPlan = ml.planId ? plans.find((p) => p.id === ml.planId) : null;
                   return (
-                    <View key={ci.id} style={styles.dayDetailRow}>
-                      <View
-                        style={[
-                          styles.statusDot,
-                          isCompleted ? styles.success : isMissed ? styles.danger : styles.pending,
-                        ]}
-                      />
+                    <View key={ml.id} style={styles.dayDetailRow}>
+                      <View style={[styles.statusDot, styles.moodDot]} />
                       <View style={styles.rowContent}>
-                        <Text style={styles.rowTitle}>
-                          {ci.scheduledTime} · {plan?.name ?? "Plano"}
-                        </Text>
-                        <Text style={styles.rowMeta}>{getStatusLabel(ci)}</Text>
-                        {doses.length > 0 && (
-                          <Text numberOfLines={1} style={styles.doseMeta}>
-                            {doses.map((dose) => `${dose.name} ${dose.quantity}x`).join(", ")}
-                          </Text>
-                        )}
+                        <Text style={styles.rowTitle}>{item.time} · {ml.feeling}</Text>
+                        {linkedPlan && <Text style={styles.rowMeta}>{linkedPlan.name}</Text>}
+                        {ml.text ? <Text style={styles.doseMeta}>{ml.text}</Text> : null}
                       </View>
                     </View>
                   );
                 })
               )}
-              {dayQuickLogs.map((ql) => {
-                const time = formatCompletedAt(ql.takenAt);
-                return (
-                  <View key={ql.id} style={styles.dayDetailRow}>
-                    <View style={[styles.statusDot, styles.quickLogDot]} />
-                    <View style={styles.rowContent}>
-                      <Text style={styles.rowTitle}>{time} · {ql.medicationName}</Text>
-                      <Text style={styles.rowMeta}>{ql.dosage} · Avulso</Text>
-                      {ql.notes ? <Text style={styles.doseMeta}>{ql.notes}</Text> : null}
-                    </View>
-                  </View>
-                );
-              })}
             </View>
           );
         })()}
@@ -303,6 +349,10 @@ export function HistoryScreen({ checkIns, getDosesForCheckIn, onQuickLog, plans,
           <View style={styles.legendItem}>
             <View style={styles.emptyLegendDot} />
             <Text style={styles.legendText}>Sem plano</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, styles.moodDot]} />
+            <Text style={styles.legendText}>Sentimento</Text>
           </View>
         </View>
       </View>
@@ -376,23 +426,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
-  headerRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  quickLogChip: {
+  actionChip: {
     backgroundColor: colors.glass,
-    borderColor: colors.primary,
+    borderColor: colors.border,
     borderRadius: radius.full,
     borderWidth: 1,
-    marginTop: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  quickLogChipText: {
-    color: colors.primarySoft,
+  actionChipText: {
+    color: colors.textMuted,
     ...typography.labelSm,
+  },
+  headerActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  moodDot: {
+    backgroundColor: colors.secondary,
+    marginTop: 4,
+    opacity: 0.9,
   },
   quickLogDot: {
     backgroundColor: colors.secondary,
@@ -401,26 +456,23 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
+    gap: spacing.xs,
+    marginTop: spacing.md,
   },
   legendDot: {
     borderRadius: radius.full,
-    height: 8,
-    width: 8,
+    height: 6,
+    width: 6,
   },
   legendItem: {
     alignItems: "center",
-    backgroundColor: colors.glass,
-    borderRadius: radius.full,
     flexDirection: "row",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: 4,
   },
   legendText: {
-    color: colors.textMuted,
-    ...typography.labelSm,
+    color: colors.textSubtle,
+    fontSize: 11,
+    lineHeight: 14,
   },
   monthLabel: {
     color: colors.text,
