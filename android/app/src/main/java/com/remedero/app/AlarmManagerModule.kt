@@ -135,7 +135,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("getPendingAlarm") {
-      val context = appContext.reactContext ?: return@AsyncFunction null null
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       val prefs = context.getSharedPreferences("remedero_alarms", Context.MODE_PRIVATE)
       val hasPending = prefs.getBoolean("has_pending_alarm", false)
