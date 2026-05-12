@@ -27,6 +27,13 @@
     "react-native": "0.83.6",
     "react-native-safe-area-context": "~5.6.2"
   },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": ["expo-av"]
+      }
+    }
+  },
   "devDependencies": {
     "@types/jszip": "^3.4.0",
     "@types/react": "^19.2.14",

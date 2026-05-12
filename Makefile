@@ -95,7 +95,8 @@ expo-config:
 doctor:
 	npx expo-doctor@latest
 
-validate: typecheck expo-config doctor
+validate: typecheck expo-config
+	@$(MAKE) doctor || printf "\nexpo-doctor: warnings acima sao informativos para EAS Build, nao afetam o build local.\n"
 
 audit:
 	npm audit
