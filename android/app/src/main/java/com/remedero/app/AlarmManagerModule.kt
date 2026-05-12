@@ -46,7 +46,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("scheduleWeeklyAlarm") { planId: String, weekday: Int, hour: Int, minute: Int, retryIndex: Int, snoozeMinutes: Int, planName: String ->
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       val retryOffsetMinutes = retryIndex * snoozeMinutes
       val totalMinutes = hour * 60 + minute + retryOffsetMinutes
@@ -103,7 +103,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("cancelAlarm") { planId: String, weekday: Int, hhmm: String, retryIndex: Int ->
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       val alarmId = if (retryIndex == 0) {
         "alarm-$planId-$weekday-$hhmm"
@@ -115,7 +115,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("cancelAllAlarmsForPlan") { planId: String ->
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       val prefs = context.getSharedPreferences("remedero_plan_alarms", Context.MODE_PRIVATE)
       val key = "plan_alarms_$planId"
@@ -126,7 +126,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("cancelAlarmsForSlot") { planId: String, weekday: Int, hhmm: String, maxRetryCount: Int ->
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       cancelAlarmById(context, "alarm-$planId-$weekday-$hhmm")
       for (i in 1..maxRetryCount) {
@@ -135,7 +135,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("getPendingAlarm") {
-      val context = appContext.reactContext ?: return@AsyncFunction null
+      val context = appContext.reactContext ?: return@AsyncFunction null null
 
       val prefs = context.getSharedPreferences("remedero_alarms", Context.MODE_PRIVATE)
       val hasPending = prefs.getBoolean("has_pending_alarm", false)
@@ -156,7 +156,7 @@ class AlarmManagerModule : Module() {
     }
 
     AsyncFunction("clearPendingAlarm") {
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
 
       val prefs = context.getSharedPreferences("remedero_alarms", Context.MODE_PRIVATE)
       prefs.edit()

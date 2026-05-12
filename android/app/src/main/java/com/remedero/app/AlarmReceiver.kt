@@ -153,7 +153,7 @@ class AlarmReceiver : BroadcastReceiver() {
         @Suppress("DEPRECATION")
         setVibrate(longArrayOf(0, 500, 250, 500))
         @Suppress("DEPRECATION")
-        priority = Notification.PRIORITY_MAX
+        setPriority(Notification.PRIORITY_MAX)
       }
     }
 
