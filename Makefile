@@ -12,7 +12,7 @@ RELEASE_APK ?= $(RELEASE_DIR)/$(RELEASE_APK_NAME)
 
 
 
-.PHONY: help install install-deps install-dev expo-install start start-port start-clear start-tunnel start-tunnel-clear android-reverse start-localhost ios android web typecheck expo-config doctor validate audit android-debug-apk setup-signing release-apk release-check-clean create-release
+.PHONY: help install install-deps install-dev expo-install start start-port start-clear start-tunnel start-tunnel-clear android-reverse start-localhost ios android web typecheck expo-config doctor validate audit prebuild create-keystore android-debug-apk setup-signing release-apk release-check-clean create-release
 
 help:
 	@printf "Remedero commands:\n"
@@ -35,6 +35,8 @@ help:
 	@printf "  make doctor        Run Expo Doctor\n"
 	@printf "  make validate      Run typecheck, Expo config validation and Expo Doctor\n"
 	@printf "  make audit         Run npm audit without auto-fixing\n"
+	@printf "  make prebuild      Generate android/ folder via Expo (run once after clone)\n"
+	@printf "  make create-keystore Generate release keystore (run once, backup the file!)\n"
 	@printf "  make android-debug-apk Generate local debug APK\n"
 	@printf "  make setup-signing Write android/keystore.properties from .env\n"
 	@printf "  make release-apk   Generate signed release APK at $(RELEASE_APK)\n"
@@ -97,6 +99,19 @@ validate: typecheck expo-config doctor
 
 audit:
 	npm audit
+
+prebuild:
+	ANDROID_HOME="$(ANDROID_SDK)" ANDROID_SDK_ROOT="$(ANDROID_SDK)" npx expo prebuild --platform android
+
+create-keystore:
+	@test -n "$(KEYSTORE_KEY_ALIAS)" || (printf "Missing KEYSTORE_KEY_ALIAS in .env\n"; exit 1)
+	@test -d android/app || (printf "Missing android/. Run: make prebuild\n"; exit 1)
+	keytool -genkeypair -v \
+		-keystore android/$(KEYSTORE_STORE_FILE) \
+		-alias $(KEYSTORE_KEY_ALIAS) \
+		-keyalg RSA -keysize 2048 -validity 10000
+	@printf "Keystore criada em android/$(KEYSTORE_STORE_FILE)\n"
+	@printf "ATENCAO: faca backup desse arquivo agora em local seguro!\n"
 
 android-debug-apk:
 	@test -d android || (echo "Missing android/. Run: ANDROID_HOME=\"$(ANDROID_SDK)\" ANDROID_SDK_ROOT=\"$(ANDROID_SDK)\" npx expo prebuild --platform android"; exit 1)

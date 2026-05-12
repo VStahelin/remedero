@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, BackHandler, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
+import { Alert, BackHandler, Linking, Platform, StatusBar, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -78,7 +78,8 @@ import {
   dbUpdatePlan,
   initializeDatabase,
 } from "@/storage/database";
-import { colors, radius, spacing, typography } from "@/theme/theme";
+import { TabBar, MainTab } from "@/components/TabBar";
+import { colors, spacing } from "@/theme/theme";
 import {
   AlarmSettings,
   CheckIn,
@@ -90,7 +91,6 @@ import {
   Weekday,
 } from "@/types/domain";
 
-type MainTab = "home" | "plans" | "history" | "settings";
 type AppView =
   | MainTab
   | "alarm"
@@ -106,13 +106,6 @@ type AppView =
   | "editCatalogMedication"
   | "addMood"
   | "checkInDetail";
-
-const tabs: Array<{ key: MainTab; label: string }> = [
-  { key: "home", label: "Home" },
-  { key: "plans", label: "Planos" },
-  { key: "history", label: "Historico" },
-  { key: "settings", label: "Config" },
-];
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -1328,77 +1321,19 @@ function AppShell() {
     >
       <StatusBar backgroundColor={colors.background} barStyle="light-content" />
       <View style={styles.container}>{renderContent()}</View>
-      {view !== "alarm" &&
-      view !== "checkin" &&
-      view !== "createPlan" &&
-      view !== "editPlan" &&
-      view !== "planDetail" &&
-      view !== "addMedication" &&
-      view !== "editMedication" &&
-      view !== "quickLog" &&
-      view !== "medicationCatalog" &&
-      view !== "addCatalogMedication" &&
-      view !== "editCatalogMedication" &&
-      view !== "addMood" &&
-      view !== "checkInDetail" ? (
-        <View style={styles.tabs}>
-          {tabs.map((tab) => {
-            const isActive = view === tab.key;
-
-            return (
-              <Pressable
-                key={tab.key}
-                accessibilityRole="button"
-                onPress={() => navigateTo(tab.key)}
-                style={[styles.tab, isActive && styles.activeTab]}
-              >
-                <Text style={[styles.tabLabel, isActive && styles.activeTabLabel]}>
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
+      {(view === "home" || view === "plans" || view === "history" || view === "settings") && (
+        <TabBar activeTab={view} onPress={navigateTo} />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  activeTab: {
-    backgroundColor: colors.primary,
-  },
-  activeTabLabel: {
-    color: colors.primaryText,
-  },
   container: {
     flex: 1,
   },
   safeArea: {
     backgroundColor: colors.background,
     flex: 1,
-  },
-  tab: {
-    alignItems: "center",
-    borderRadius: radius.full,
-    flex: 1,
-    minHeight: 44,
-    justifyContent: "center",
-    paddingVertical: spacing.xs,
-  },
-  tabLabel: {
-    color: colors.textMuted,
-    ...typography.labelSm,
-  },
-  tabs: {
-    backgroundColor: colors.glass,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    marginHorizontal: spacing.lg,
-    marginVertical: spacing.md,
-    padding: spacing.xs,
   },
 });
