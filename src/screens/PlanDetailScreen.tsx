@@ -170,7 +170,7 @@ export function PlanDetailScreen({
             </View>
             <View style={styles.progressTrack}>
               <View
-                style={[styles.progressFillTreatment, { width: `${stats.progressPercent}%` }]}
+                style={[styles.progressFillTreatment, { width: `${stats.progressPercent ?? 0}%` }]}
               />
             </View>
           </View>

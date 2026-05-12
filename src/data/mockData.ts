@@ -42,12 +42,16 @@ export const plans: Plan[] = [
     description:
       "Rotina diaria para manter consistencia nos remedios principais e suplementos de apoio.",
     isActive: true,
+    startDate: daysAgo(10),
+    durationDays: 30,
   },
   {
     id: "vitamins",
     name: "Vitaminas do mes",
     description: "Plano simples de vitaminas para acompanhar energia e disposicao.",
     isActive: true,
+    startDate: daysAgo(0),
+    durationDays: null,
   },
 ];
 

@@ -209,7 +209,7 @@ export function subscribeToAlarmNotifications(handlers: AlarmNotificationHandler
       const pending = await module.getPendingAlarm();
       if (pending && isAlarmNotificationData(pending)) {
         await module.clearPendingAlarm();
-        if (pending.weekday === -1) {
+        if ((pending.weekday as number) === -1) {
           handlers.onSnoozeAlarm?.(pending as AlarmNotificationData);
         } else {
           handlers.onOpenAlarm(pending as AlarmNotificationData);

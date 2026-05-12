@@ -134,7 +134,7 @@ export function HomeScreen({
                 </View>
                 <View style={styles.track}>
                   <View
-                    style={[styles.fillGreen, { width: `${nextPlanProgress.progressPercent}%` }]}
+                    style={[styles.fillGreen, { width: `${nextPlanProgress.progressPercent ?? 0}%` }]}
                   />
                 </View>
               </>
