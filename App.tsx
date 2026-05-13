@@ -19,6 +19,7 @@ import {
   playForegroundAlarmSound,
   requestAlarmPermissions,
   scheduleAlarmsForPlan,
+  scheduleTestAlarm,
   stopForegroundAlarmSound,
   subscribeToAlarmNotifications,
 } from "@/notifications/alarms";
@@ -679,6 +680,23 @@ function AppShell() {
     void Linking.openSettings();
   }
 
+  async function handleTestAlarm() {
+    const scheduled = await scheduleTestAlarm(5);
+    if (scheduled) {
+      Alert.alert(
+        "Alarme de teste",
+        "O alarme vai disparar em 5 segundos. Pode fechar o app para testar a notificacao.",
+        [{ text: "OK" }],
+      );
+    } else {
+      Alert.alert(
+        "Nao foi possivel agendar",
+        "Verifique se os alarmes estao habilitados e a permissao de alarmes exatos foi concedida.",
+        [{ text: "OK" }],
+      );
+    }
+  }
+
   function handleClearData() {
     void Promise.all(plans.map((plan) => cancelAlarmsForPlan(plan.id)));
     dbClearAllTables();
@@ -1287,6 +1305,7 @@ function AppShell() {
           onOpenAlarmSystemSettings={handleOpenAlarmSystemSettings}
           onOpenCatalog={() => navigateTo("medicationCatalog")}
           onRequestAlarmPermission={handleRequestAlarmPermission}
+          onTestAlarm={handleTestAlarm}
           onUpdateAlarmSettings={handleUpdateAlarmSettings}
         />
       );

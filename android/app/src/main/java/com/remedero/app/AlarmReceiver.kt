@@ -11,7 +11,6 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
-import android.os.SystemClock
 
 class AlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
@@ -23,6 +22,11 @@ class AlarmReceiver : BroadcastReceiver() {
     val retryIndex = intent.getIntExtra("retryIndex", 0)
     val snoozeMinutes = intent.getIntExtra("snoozeMinutes", 10)
     val planName = intent.getStringExtra("planName") ?: "Medicamento"
+    val alarmId = intent.getStringExtra("alarmId") ?: run {
+      val hhmm = String.format("%02d%02d", hour, minute)
+      if (retryIndex == 0) "alarm-$planId-$weekday-$hhmm"
+      else "alarm-$planId-$weekday-$hhmm-retry-$retryIndex"
+    }
 
     // Store pending alarm in SharedPreferences
     val alarmPrefs = context.getSharedPreferences("remedero_alarms", Context.MODE_PRIVATE)
@@ -33,36 +37,33 @@ class AlarmReceiver : BroadcastReceiver() {
       .putBoolean("has_pending_alarm", true)
       .apply()
 
-    // Reschedule for next week
-    val nextWeekTrigger = System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000
-    val nextIntent = Intent(context, AlarmReceiver::class.java).apply {
-      putExtra("planId", planId)
-      putExtra("scheduledTime", scheduledTime)
-      putExtra("weekday", weekday)
-      putExtra("hour", hour)
-      putExtra("minute", minute)
-      putExtra("retryIndex", retryIndex)
-      putExtra("snoozeMinutes", snoozeMinutes)
-      putExtra("planName", planName)
-    }
-    val alarmId = if (retryIndex == 0) {
-      val hhmm = String.format("%02d%02d", hour, minute)
-      "alarm-$planId-$weekday-$hhmm"
-    } else {
-      val hhmm = String.format("%02d%02d", hour, minute)
-      "alarm-$planId-$weekday-$hhmm-retry-$retryIndex"
-    }
-    val nextPendingIntent = PendingIntent.getBroadcast(
-      context,
-      alarmId.hashCode(),
-      nextIntent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextWeekTrigger, nextPendingIntent)
-    } else {
-      alarmManager.setExact(AlarmManager.RTC_WAKEUP, nextWeekTrigger, nextPendingIntent)
+    // Reschedule for next week — snooze alarms (retryIndex=99) are one-shot, skip
+    if (retryIndex != 99) {
+      val nextWeekTrigger = System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000
+      val nextIntent = Intent(context, AlarmReceiver::class.java).apply {
+        putExtra("planId", planId)
+        putExtra("alarmId", alarmId)
+        putExtra("scheduledTime", scheduledTime)
+        putExtra("weekday", weekday)
+        putExtra("hour", hour)
+        putExtra("minute", minute)
+        putExtra("retryIndex", retryIndex)
+        putExtra("snoozeMinutes", snoozeMinutes)
+        putExtra("planName", planName)
+      }
+      val nextPendingIntent = PendingIntent.getBroadcast(
+        context,
+        alarmId.hashCode(),
+        nextIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()) {
+        alarmManager.setAlarmClock(
+          AlarmManager.AlarmClockInfo(nextWeekTrigger, nextPendingIntent),
+          nextPendingIntent,
+        )
+      }
     }
 
     // Build notification
@@ -114,6 +115,7 @@ class AlarmReceiver : BroadcastReceiver() {
       putExtra("hour", hour)
       putExtra("minute", minute)
       putExtra("snoozeMinutes", snoozeMinutes)
+      putExtra("planName", planName)
       putExtra("notifId", notifId)
     }
     val snoozePendingIntent = PendingIntent.getBroadcast(

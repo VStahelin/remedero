@@ -20,6 +20,7 @@ export type SettingsScreenProps = {
   onOpenAlarmSystemSettings: () => void;
   onOpenCatalog: () => void;
   onRequestAlarmPermission: () => void;
+  onTestAlarm: () => void;
   onUpdateAlarmSettings: (settings: AlarmSettings) => void;
 };
 
@@ -46,6 +47,7 @@ export function SettingsScreen({
   onOpenAlarmSystemSettings,
   onOpenCatalog,
   onRequestAlarmPermission,
+  onTestAlarm,
   onUpdateAlarmSettings,
 }: SettingsScreenProps) {
   function handleClearData() {
@@ -268,6 +270,18 @@ export function SettingsScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        <View style={styles.testAlarmBox}>
+          <Text style={styles.settingMeta}>
+            Dispara um alarme de teste em 5 segundos para verificar som,
+            notificacao e tela de check-in.
+          </Text>
+          <PrimaryButton
+            label="Testar alarme"
+            onPress={onTestAlarm}
+            variant="secondary"
+          />
+        </View>
       </View>
 
       <View style={styles.card}>
@@ -486,6 +500,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     ...typography.headlineLg,
     marginTop: spacing.xs,
+  },
+  testAlarmBox: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingTop: spacing.md,
   },
   toggleButton: {
     backgroundColor: colors.surfaceBright,

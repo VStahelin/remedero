@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
 import android.os.Build
+import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.json.JSONObject
 import java.util.Calendar
 
 object AlarmEventBus {
@@ -45,8 +47,71 @@ class AlarmManagerModule : Module() {
       RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM).toString()
     }
 
+    AsyncFunction("canScheduleExactAlarms") {
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        alarmManager.canScheduleExactAlarms()
+      } else {
+        true
+      }
+    }
+
+    AsyncFunction("openExactAlarmSettings") {
+      val context = appContext.reactContext ?: return@AsyncFunction null
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val settingsIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+          flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(settingsIntent)
+      }
+    }
+
+    AsyncFunction("scheduleTestAlarm") { planName: String, delaySeconds: Int ->
+      val context = appContext.reactContext ?: return@AsyncFunction null
+      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+        return@AsyncFunction null
+      }
+
+      val triggerTime = System.currentTimeMillis() + delaySeconds * 1000L
+      val now = java.util.Calendar.getInstance()
+      val scheduledTime = String.format("%02d:%02d", now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE))
+      val alarmId = "alarm-remedero-test-0-0000-retry-99"
+
+      val intent = Intent(context, AlarmReceiver::class.java).apply {
+        putExtra("planId", "remedero-test")
+        putExtra("alarmId", alarmId)
+        putExtra("scheduledTime", scheduledTime)
+        putExtra("weekday", 0)
+        putExtra("hour", 0)
+        putExtra("minute", 0)
+        putExtra("retryIndex", 99)
+        putExtra("snoozeMinutes", 10)
+        putExtra("planName", planName)
+      }
+
+      val pendingIntent = PendingIntent.getBroadcast(
+        context,
+        alarmId.hashCode(),
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+
+      alarmManager.setAlarmClock(
+        AlarmManager.AlarmClockInfo(triggerTime, pendingIntent),
+        pendingIntent,
+      )
+    }
+
     AsyncFunction("scheduleWeeklyAlarm") { planId: String, weekday: Int, hour: Int, minute: Int, retryIndex: Int, snoozeMinutes: Int, planName: String ->
       val context = appContext.reactContext ?: return@AsyncFunction null
+      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+        return@AsyncFunction null
+      }
 
       val retryOffsetMinutes = retryIndex * snoozeMinutes
       val totalMinutes = hour * 60 + minute + retryOffsetMinutes
@@ -54,11 +119,10 @@ class AlarmManagerModule : Module() {
       val effectiveMinute = totalMinutes % 60
       val effectiveWeekday = ((weekday + totalMinutes / 1440) % 7)
 
+      val hhmm = String.format("%02d%02d", hour, minute)
       val alarmId = if (retryIndex == 0) {
-        val hhmm = String.format("%02d%02d", hour, minute)
         "alarm-$planId-$weekday-$hhmm"
       } else {
-        val hhmm = String.format("%02d%02d", hour, minute)
         "alarm-$planId-$weekday-$hhmm-retry-$retryIndex"
       }
 
@@ -66,6 +130,7 @@ class AlarmManagerModule : Module() {
 
       val intent = Intent(context, AlarmReceiver::class.java).apply {
         putExtra("planId", planId)
+        putExtra("alarmId", alarmId)
         putExtra("scheduledTime", String.format("%02d:%02d", hour, minute))
         putExtra("weekday", weekday)
         putExtra("hour", effectiveHour)
@@ -83,23 +148,31 @@ class AlarmManagerModule : Module() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )
 
-      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+      alarmManager.setAlarmClock(
+        AlarmManager.AlarmClockInfo(triggerTime, pendingIntent),
+        pendingIntent,
+      )
 
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-      } else {
-        alarmManager.setAlarmClock(
-          AlarmManager.AlarmClockInfo(triggerTime, pendingIntent),
-          pendingIntent,
-        )
-      }
-
-      val prefs = context.getSharedPreferences("remedero_plan_alarms", Context.MODE_PRIVATE)
+      // Track alarm ID per plan
+      val planPrefs = context.getSharedPreferences("remedero_plan_alarms", Context.MODE_PRIVATE)
       val key = "plan_alarms_$planId"
-      val existing = prefs.getStringSet(key, mutableSetOf()) ?: mutableSetOf()
+      val existing = planPrefs.getStringSet(key, mutableSetOf()) ?: mutableSetOf()
       val updated = LinkedHashSet(existing)
       updated.add(alarmId)
-      prefs.edit().putStringSet(key, updated).apply()
+      planPrefs.edit().putStringSet(key, updated).apply()
+
+      // Persist full alarm data for boot recovery
+      val alarmData = JSONObject().apply {
+        put("planId", planId)
+        put("weekday", weekday)
+        put("hour", hour)
+        put("minute", minute)
+        put("retryIndex", retryIndex)
+        put("snoozeMinutes", snoozeMinutes)
+        put("planName", planName)
+      }
+      val dataPrefs = context.getSharedPreferences("remedero_alarm_data", Context.MODE_PRIVATE)
+      dataPrefs.edit().putString("alarm_data_$alarmId", alarmData.toString()).apply()
     }
 
     AsyncFunction("cancelAlarm") { planId: String, weekday: Int, hhmm: String, retryIndex: Int ->
@@ -117,12 +190,12 @@ class AlarmManagerModule : Module() {
     AsyncFunction("cancelAllAlarmsForPlan") { planId: String ->
       val context = appContext.reactContext ?: return@AsyncFunction null
 
-      val prefs = context.getSharedPreferences("remedero_plan_alarms", Context.MODE_PRIVATE)
+      val planPrefs = context.getSharedPreferences("remedero_plan_alarms", Context.MODE_PRIVATE)
       val key = "plan_alarms_$planId"
-      val alarmIds = prefs.getStringSet(key, emptySet()) ?: emptySet()
+      val alarmIds = planPrefs.getStringSet(key, emptySet()) ?: emptySet()
 
       alarmIds.forEach { alarmId -> cancelAlarmById(context, alarmId) }
-      prefs.edit().remove(key).apply()
+      planPrefs.edit().remove(key).apply()
     }
 
     AsyncFunction("cancelAlarmsForSlot") { planId: String, weekday: Int, hhmm: String, maxRetryCount: Int ->
@@ -183,6 +256,9 @@ class AlarmManagerModule : Module() {
       alarmManager.cancel(pendingIntent)
       pendingIntent.cancel()
     }
+
+    val dataPrefs = context.getSharedPreferences("remedero_alarm_data", Context.MODE_PRIVATE)
+    dataPrefs.edit().remove("alarm_data_$alarmId").apply()
   }
 
   private fun nextOccurrence(weekday: Int, hour: Int, minute: Int): Long {

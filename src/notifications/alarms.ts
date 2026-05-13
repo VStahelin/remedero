@@ -82,6 +82,37 @@ export async function getAlarmPermissionStatus(): Promise<string> {
   return permissions.status;
 }
 
+export async function canScheduleExactAlarms(): Promise<boolean> {
+  const module = getAlarmManagerModule();
+  if (!module) return false;
+  try {
+    return (await module.canScheduleExactAlarms()) as boolean;
+  } catch {
+    return false;
+  }
+}
+
+export async function openExactAlarmSettings(): Promise<void> {
+  const module = getAlarmManagerModule();
+  if (!module) return;
+  try {
+    await module.openExactAlarmSettings();
+  } catch {
+    // ignore
+  }
+}
+
+export async function scheduleTestAlarm(delaySeconds = 5): Promise<boolean> {
+  const module = getAlarmManagerModule();
+  if (!module) return false;
+  try {
+    await module.scheduleTestAlarm("Alarme de teste", delaySeconds);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function playForegroundAlarmSound(): Promise<void> {
   const module = getAlarmManagerModule();
   if (!module) return;
@@ -109,6 +140,9 @@ export async function scheduleAlarmsForPlan(
     await cancelAlarmsForPlan(planId);
     return;
   }
+
+  const hasPermission = await canScheduleExactAlarms();
+  if (!hasPermission) return;
 
   await cancelAlarmsForPlan(planId);
 
