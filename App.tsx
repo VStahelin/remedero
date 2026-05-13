@@ -13,9 +13,11 @@ import { exportBackupZip, importBackupZip } from "@/storage/backupZip";
 import {
   AlarmSlot,
   areMedicationAlarmsAvailable,
+  canScheduleExactAlarms,
   cancelAlarmsForPlan,
   cancelAlarmsForSlot,
   getAlarmPermissionStatus,
+  openExactAlarmSettings,
   playForegroundAlarmSound,
   requestAlarmPermissions,
   scheduleAlarmsForPlan,
@@ -143,6 +145,7 @@ function AppShell() {
   const [alarmSettings, setAlarmSettings] =
     useState<AlarmSettings>(DEFAULT_ALARM_SETTINGS);
   const [alarmPermissionStatus, setAlarmPermissionStatus] = useState("undetermined");
+  const [exactAlarmGranted, setExactAlarmGranted] = useState(false);
   const [alarmInfo, setAlarmInfo] = useState<{ planId: string; scheduledTime: string; planName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null);
@@ -181,6 +184,7 @@ function AppShell() {
     void (async () => {
       const granted = alarmSettings.enabled ? await requestAlarmPermissions() : true;
       setAlarmPermissionStatus(await getAlarmPermissionStatus());
+      setExactAlarmGranted(await canScheduleExactAlarms());
 
       if (alarmSettings.enabled && !granted) {
         Alert.alert(
@@ -667,6 +671,7 @@ function AppShell() {
 
     const granted = await requestAlarmPermissions();
     setAlarmPermissionStatus(await getAlarmPermissionStatus());
+    setExactAlarmGranted(await canScheduleExactAlarms());
 
     if (!granted) {
       Alert.alert(
@@ -681,6 +686,19 @@ function AppShell() {
   }
 
   async function handleTestAlarm() {
+    const hasExactPermission = await canScheduleExactAlarms();
+    if (!hasExactPermission) {
+      Alert.alert(
+        "Permissao necessaria",
+        'Ative "Alarmes e lembretes" para o Remedero nas configuracoes do Android. Isso e diferente da permissao de notificacoes.',
+        [
+          { text: "Fechar", style: "cancel" },
+          { text: "Abrir configuracoes", onPress: () => void openExactAlarmSettings() },
+        ],
+      );
+      return;
+    }
+
     const scheduled = await scheduleTestAlarm(5);
     if (scheduled) {
       Alert.alert(
@@ -691,8 +709,11 @@ function AppShell() {
     } else {
       Alert.alert(
         "Nao foi possivel agendar",
-        "Verifique se os alarmes estao habilitados e a permissao de alarmes exatos foi concedida.",
-        [{ text: "OK" }],
+        "Permissao concedida mas o agendamento falhou. Verifique se o app nao esta sendo bloqueado pela otimizacao de bateria do fabricante.",
+        [
+          { text: "Fechar", style: "cancel" },
+          { text: "Configs de bateria", onPress: () => void Linking.openSettings() },
+        ],
       );
     }
   }
@@ -1299,6 +1320,7 @@ function AppShell() {
         <SettingsScreen
           alarmPermissionStatus={alarmPermissionStatus}
           alarmSettings={alarmSettings}
+          exactAlarmGranted={exactAlarmGranted}
           onClearData={handleClearData}
           onExport={handleExport}
           onImport={handleImport}

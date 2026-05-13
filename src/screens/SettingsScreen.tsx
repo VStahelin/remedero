@@ -14,6 +14,7 @@ import { AlarmSettings } from "@/types/domain";
 export type SettingsScreenProps = {
   alarmPermissionStatus: string;
   alarmSettings: AlarmSettings;
+  exactAlarmGranted: boolean;
   onClearData: () => void;
   onExport: () => void;
   onImport: () => void;
@@ -41,6 +42,7 @@ function getPermissionLabel(status: string): string {
 export function SettingsScreen({
   alarmPermissionStatus,
   alarmSettings,
+  exactAlarmGranted,
   onClearData,
   onExport,
   onImport,
@@ -233,8 +235,9 @@ export function SettingsScreen({
         </View>
 
         <View style={styles.permissionBox}>
+          <Text style={styles.settingTitle}>Permissoes do Android</Text>
           <View style={styles.permissionHeader}>
-            <Text style={styles.settingTitle}>Permissao do Android</Text>
+            <Text style={styles.settingMeta}>Notificacoes</Text>
             <View
               style={[
                 styles.permissionBadge,
@@ -248,9 +251,23 @@ export function SettingsScreen({
               </Text>
             </View>
           </View>
+          <View style={styles.permissionHeader}>
+            <Text style={styles.settingMeta}>Alarmes e lembretes</Text>
+            <View
+              style={[
+                styles.permissionBadge,
+                exactAlarmGranted
+                  ? styles.permissionGranted
+                  : styles.permissionDenied,
+              ]}
+            >
+              <Text style={styles.permissionBadgeText}>
+                {exactAlarmGranted ? "Permitido" : "Bloqueado"}
+              </Text>
+            </View>
+          </View>
           <Text style={styles.settingMeta}>
-            Para alarmes exatos no Android 12+, confirme tambem em Alarmes e
-            lembretes nas configuracoes do sistema.
+            Ambas sao necessarias para os alarmes funcionarem.
           </Text>
           <View style={styles.permissionActions}>
             <TouchableOpacity
