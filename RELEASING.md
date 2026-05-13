@@ -11,7 +11,12 @@
 
 ### 1. Bumpar a versão
 
-Editar **dois arquivos**:
+Editar **três arquivos**:
+
+**`package.json`** — o Makefile lê a versão daqui para nomear o APK e a tag do GitHub
+```json
+"version": "0.1.X"
+```
 
 **`app.json`**
 ```json
