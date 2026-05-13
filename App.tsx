@@ -10,6 +10,7 @@ import {
   AddPlanMedicationInput,
 } from "@/screens/AddMedicationScreen";
 import { exportBackupZip, importBackupZip } from "@/storage/backupZip";
+import { checkForUpdate } from "@/utils/updateCheck";
 import {
   AlarmSlot,
   areMedicationAlarmsAvailable,
@@ -173,6 +174,21 @@ function AppShell() {
     setAlarmSettings(dbGetAlarmSettings());
 
     setIsDbReady(true);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const update = await checkForUpdate();
+      if (!update) return;
+      Alert.alert(
+        `Atualizacao disponivel — v${update.version}`,
+        "Uma nova versao do Remedero esta disponivel. Deseja baixar agora?",
+        [
+          { text: "Agora nao", style: "cancel" },
+          { text: "Baixar", onPress: () => void Linking.openURL(update.downloadUrl) },
+        ],
+      );
+    })();
   }, []);
 
   useEffect(() => {
