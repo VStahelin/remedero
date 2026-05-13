@@ -15,6 +15,7 @@ export type SettingsScreenProps = {
   alarmPermissionStatus: string;
   alarmSettings: AlarmSettings;
   exactAlarmGranted: boolean;
+  onCheckUpdate: () => void;
   onClearData: () => void;
   onExport: () => void;
   onImport: () => void;
@@ -43,6 +44,7 @@ export function SettingsScreen({
   alarmPermissionStatus,
   alarmSettings,
   exactAlarmGranted,
+  onCheckUpdate,
   onClearData,
   onExport,
   onImport,
@@ -322,6 +324,18 @@ export function SettingsScreen({
         <PrimaryButton
           label="Importar ZIP"
           onPress={onImport}
+          variant="secondary"
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Atualizacoes</Text>
+        <Text style={styles.cardText}>
+          Verifica se ha uma nova versao do Remedero disponivel.
+        </Text>
+        <PrimaryButton
+          label="Verificar atualizacoes"
+          onPress={onCheckUpdate}
           variant="secondary"
         />
       </View>

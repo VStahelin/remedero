@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, BackHandler, Linking, Platform, StatusBar, StyleSheet, View } from "react-native";
+import { Alert, BackHandler, Linking, Platform, StatusBar, StyleSheet, ToastAndroid, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -701,6 +701,22 @@ function AppShell() {
     void Linking.openSettings();
   }
 
+  async function handleCheckUpdate() {
+    const update = await checkForUpdate();
+    if (update) {
+      Alert.alert(
+        `Nova versao disponivel — v${update.version}`,
+        "Deseja baixar agora?",
+        [
+          { text: "Agora nao", style: "cancel" },
+          { text: "Baixar", onPress: () => void Linking.openURL(update.downloadUrl) },
+        ],
+      );
+    } else {
+      ToastAndroid.show("O app esta atualizado.", ToastAndroid.SHORT);
+    }
+  }
+
   async function handleTestAlarm() {
     const hasExactPermission = await canScheduleExactAlarms();
     if (!hasExactPermission) {
@@ -1337,6 +1353,7 @@ function AppShell() {
           alarmPermissionStatus={alarmPermissionStatus}
           alarmSettings={alarmSettings}
           exactAlarmGranted={exactAlarmGranted}
+          onCheckUpdate={() => void handleCheckUpdate()}
           onClearData={handleClearData}
           onExport={handleExport}
           onImport={handleImport}
